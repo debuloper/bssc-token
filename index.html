@@ -168,13 +168,14 @@
     ensureWallet();
 
     // health ping
-    (async () => {
-      try {
-        const [bn, gp] = await Promise.all([rpc("eth_blockNumber", []), rpc("eth_gasPrice", [])]);
-        health.classList.remove("hidden");
-        log(\`Ping OK (block \${parseInt(bn,16)}, gas \${(Number(BigInt(gp))/1e9).toFixed(3)} gwei)\`);
-      } catch { /* noop */ }
-    })();
+    // health ping
+(async () => {
+  try {
+    const [bn, gp] = await Promise.all([rpc("eth_blockNumber", []), rpc("eth_gasPrice", [])]);
+    health.classList.remove("hidden");
+    log("Ping OK (block " + parseInt(bn,16) + ", gas " + (Number(BigInt(gp))/1e9).toFixed(3) + " gwei)");
+  } catch { /* noop */ }
+})();
 
     // UI actions
     $("recover").onclick = () => {
