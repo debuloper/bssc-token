@@ -3,90 +3,329 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>⚡ One-Click Token Deployer — BSSC</title>
+  <title>One-Click ERC-20 Deployer — BSSC (EVM)</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{ --stroke:rgba(255,255,255,.06); }
+    .shell{ max-width:1000px; margin:0 auto; padding:32px 16px }
+    .card{ background:linear-gradient(180deg,#10111a,#0b0b10 65%); border-radius:16px; padding:20px; border:1px solid var(--stroke); box-shadow:0 12px 32px rgba(0,0,0,.35) }
+    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:#fff; border-radius:12px; padding:12px 16px; font-weight:700; box-shadow:0 8px 24px rgba(109,40,217,.35); border:1px solid rgba(255,255,255,.1) }
+    .ghost{ background:#141824; color:#e5e7eb; border-radius:12px; padding:12px 16px; border:1px solid rgba(255,255,255,.12) }
+    .ghost:hover{ background:#1c2030 }
+    .field{ width:100%; background:#0f1117; color:#e7e7ea; border:1px solid var(--stroke); border-radius:12px; padding:12px 14px; font-size:16px }
+    .row{ display:flex; gap:12px; flex-wrap:wrap }
+    .mono{ font-variant-numeric:tabular-nums; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace }
+    .log-row{ display:grid; grid-template-columns:110px minmax(0,1fr); gap:12px; padding:10px 12px; border-radius:12px; background:#10111a; border:1px solid var(--stroke) }
+    .tag{ font-size:11px; padding:2px 8px; border-radius:9999px; font-weight:700 }
+    .tag.info{ background:#2a2e6b; color:#c7d2fe } .tag.ok{ background:#0a3c2f; color:#a7f3d0 } .tag.err{ background:#5f1b1b; color:#fecaca }
+    .sig{ word-break:break-all }
+    /* small healthy badge (hidden until recover) */
+    #status { display:none; align-items:center; gap:6px; font-weight:600; font-size:12px;
+      background:rgba(16,185,129,.1); color:#34d399; border:1px solid rgba(16,185,129,.25); border-radius:8px; padding:4px 10px }
+    #status::before{ content:""; display:inline-block; width:7px; height:7px; background:#34d399; border-radius:50% }
+    /* modal */
+    .modal-back{ position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(4px); z-index:60; display:none }
+    .modal{ max-width:760px; margin:6vh auto; background:#10111a; border:1px solid var(--stroke); border-radius:16px; overflow:hidden }
+    .modal-hd{ display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid var(--stroke) }
+    .modal-bd{ padding:16px 18px }
+  </style>
+</head>
+<body>
+  <main class="shell space-y-6">
+    <!-- Header -->
+    <header class="row" style="justify-content:space-between; align-items:center">
+      <div class="row" style="align-items:center">
+        <div style="width:36px;height:36px;border-radius:12px;border:1px solid var(--stroke);
+          background:radial-gradient(110% 110% at top left,rgba(109,40,217,.9),rgba(79,70,229,.9))"></div>
+        <h1 class="text-xl md:text-2xl font-semibold tracking-tight">One-Click ERC-20 Deployer — BSSC (EVM)</h1>
+      </div>
+      <div class="row" style="align-items:center">
+        <div id="networkActions" class="row hidden">
+          <button id="ping" class="ghost">Ping</button>
+          <a class="ghost" href="https://bssc.live/#faucet" target="_blank" rel="noreferrer">Get Test BNB</a>
+        </div>
+        <div id="status">HEALTHY</div>
+      </div>
+    </header>
+
+    <!-- Wallet (Recover only) -->
+    <section class="card">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <div>
+          <div class="text-xs uppercase text-zinc-400">Your Wallet</div>
+          <div id="addr" class="mono">—</div>
+        </div>
+        <div class="row">
+          <button id="copyAddr" class="ghost">Copy Address</button>
+        </div>
+      </div>
+      <div class="row mt-3">
+        <input id="priv" class="field" placeholder="Private key (0x…)" style="flex:1;min-width:320px"/>
+        <button id="recover" class="primary">Recover</button>
+      </div>
+      <div class="row mt-3" style="justify-content:space-between; align-items:flex-end">
+        <div>
+          <div class="text-xs uppercase text-zinc-400">BNB Balance</div>
+          <div id="bal" class="text-2xl font-semibold mono mt-1">— BNB</div>
+        </div>
+        <button id="check" class="ghost">Check Balance</button>
+      </div>
+    </section>
+
+    <!-- One-Click Deploy -->
+    <section class="card space-y-3">
+      <div class="text-xs uppercase text-zinc-400">Deploy new ERC-20</div>
+      <div class="row">
+        <input id="name" class="field" placeholder="Token name (e.g., Demo Token)" style="flex:1;min-width:300px"/>
+        <input id="symbol" class="field" placeholder="Symbol (e.g., DMO)" style="width:200px"/>
+        <button id="deploy" class="primary">Deploy</button>
+      </div>
+      <div class="text-xs text-zinc-500">Decimals = 18, Initial supply = 1,000,000 (minted to your address).</div>
+
+      <!-- After deploy summary -->
+      <div id="summary" class="row hidden" style="justify-content:space-between; margin-top:8px">
+        <div>
+          <div class="text-xs uppercase text-zinc-400">Contract Address</div>
+          <div id="ca" class="mono sig">—</div>
+        </div>
+        <div>
+          <div class="text-xs uppercase text-zinc-400">Your Token Balance</div>
+          <div id="mytok" class="mono">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Activity -->
+    <section class="card space-y-3">
+      <div class="row" style="justify-content:space-between; align-items:center">
+        <div class="text-xs uppercase text-zinc-400">Activity</div>
+        <button id="clear" class="ghost">Clear</button>
+      </div>
+      <div id="logs" class="space-y-2"></div>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <div id="txModal" class="modal-back">
+    <div class="modal">
+      <div class="modal-hd">
+        <div style="font-weight:700">Transaction</div>
+        <button id="txClose" class="ghost">Close</button>
+      </div>
+      <div class="modal-bd" id="txBody"></div>
+    </div>
+  </div>
+
   <script type="module">
     import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
-
-    // === PRECOMPILED ERC20 (OZ-like minimal) ===
-    const ABI = [
-      {"inputs":[{"internalType":"string","name":"name_","type":"string"},{"internalType":"string","name":"symbol_","type":"string"}],"stateMutability":"nonpayable","type":"constructor"},
-      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},
-      {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
-      {"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-      {"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-      {"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-      {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
-      {"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
-    ];
-
-    // precompiled minimal ERC20 (constructor(string,string))
-    const BYTECODE =
-      "0x608060405234801561001057600080fd5b5060405161040f38038061040f83398101604081905261002f91610047565b600080546001600160a01b039384166001600160a01b031992831617909255600180546001600160a01b0319163317905550506103b6565b6000806040838503121561008157600080fd5b825161008c8161005f565b602084015190925061009f8161005f565b60408401519091506100b18161005f565b809150509250929050565b6000806000606084860312156100d057600080fd5b83356100db8161005f565b60208501519093506100ed8161005f565b60408501519092506101008161005f565b8091505092509250929050565b6000806000806000806000806000806000806101008a8b03121561012e57600080fd5b88516101398161005f565b97506020870151965060408601519450606087015193506080870151925060a087015190925060c08701519091506101678161005f565b8091505092959899505050505050505050565b60006020828403121561018857600080fd5b8151801515811461019857600080fd5b9392505050565b600080604083850312156101b357600080fd5b50508035926020909101359150565b6000602082840312156101d457600080fd5b81516101df8161005f565b9392505050565b6000806000606084860312156101f957600080fd5b505081359360208101359360408201359450606083013592505050565b60008060006060848603121561022b57600080fd5b83356102368161005f565b60208501519093506102488161005f565b604085015190925061025b8161005f565b8091505092509250929050565b600080fd5b6102738161005f565b811461027e57600080fd5b50565b6000813590506102908161026a565b92915050565b600080604083850312156102ac57600080fd5b50508035926020909101359150565b600080fd5b6102c58161005f565b81146102d057600080fd5b50565b6000813590506102e2816102bc565b92915050565b600080604083850312156102fe57600080fd5b50508035926020909101359150565b60006020828403121561031e57600080fd5b81516103298161005f565b9392505050565b6000819050919050565b600061034382610323565b61034d818561032e565b935061035d81856020860161032e565b610366816103a6565b840191505092915050565b600061037b82610323565b610385818561032e565b935061039581856020860161032e565b80840191505092915050565b60006103b082610323565b6103ba818561032e565b93506103ca81856020860161032e565b8084019150509291505056fea26469706673582212203df7f30f7f651c9b8b5c77368e2a9e43cd72a4d9533f6a0adac655489a46a01264736f6c63430008140033";
-
     const RPC = "https://bssc-rpc.bssc.live";
-    const $ = (id)=>document.getElementById(id);
-    function log(m){$("log").textContent = m;}
 
-    let wallet;
-    $("gen").onclick = ()=>{
-      wallet = ethers.Wallet.createRandom();
-      $("addr").textContent = wallet.address;
-      $("priv").value = wallet.privateKey;
-      log("Wallet generated");
-    };
-    $("recover").onclick = ()=>{
+    // ---------- raw JSON-RPC ----------
+    async function rpc(method, params = []) {
+      const r = await fetch(RPC, {
+        method:"POST", headers:{ "content-type":"application/json" },
+        body: JSON.stringify({ jsonrpc:"2.0", id:Date.now(), method, params })
+      });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+      return j.result;
+    }
+
+    // ---------- solc dynamic loader (multi-CDN) ----------
+    async function loadSolc() {
+      if (window.solc && window.solc.compile) return true;
+      const urls = [
+        "https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js",
+        "https://unpkg.com/solc@0.8.20/solc.min.js"
+      ];
+      for (const u of urls) {
+        await new Promise(res=>{
+          const s=document.createElement("script"); s.src=u; s.async=true;
+          s.onload=res; s.onerror=res; document.head.appendChild(s);
+        });
+        if (window.solc && window.solc.compile) {
+          try {
+            const out = JSON.parse(window.solc.compile(JSON.stringify({
+              language:"Solidity",
+              sources:{A:{content:"pragma solidity ^0.8.20; contract A{}"}},
+              settings:{outputSelection:{"*":{"*":["abi"]}}}
+            })));
+            if (!out.errors || !out.errors.some(e=>e.severity==="error")) return true;
+          } catch {}
+        }
+      }
+      return false;
+    }
+    async function ensureSolc(){ const ok = await loadSolc(); if(!ok) throw new Error("solc not loaded"); }
+
+    // ---------- flattened OZ-like ERC20 (mint to deployer) ----------
+    const SRC = `
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+abstract contract Context {
+  function _msgSender() internal view virtual returns (address) { return msg.sender; }
+}
+interface IERC20 {
+  function totalSupply() external view returns (uint256);
+  function balanceOf(address account) external view returns (uint256);
+  function transfer(address to, uint256 value) external returns (bool);
+  function allowance(address owner, address spender) external view returns (uint256);
+  function approve(address spender, uint256 value) external returns (bool);
+  function transferFrom(address from, address to, uint256 value) external returns (bool);
+  event Transfer(address indexed from, address indexed to, uint256 value);
+  event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+interface IERC20Metadata is IERC20 {
+  function name() external view returns (string memory);
+  function symbol() external view returns (string memory);
+  function decimals() external view returns (uint8);
+}
+contract ERC20 is Context, IERC20, IERC20Metadata {
+  mapping(address=>uint256) internal _balances;
+  mapping(address=>mapping(address=>uint256)) private _allowances;
+  uint256 internal _totalSupply;
+  string private _name; string private _symbol; uint8 internal _decimals;
+  constructor(string memory name_, string memory symbol_, uint8 decimals_) { _name=name_; _symbol=symbol_; _decimals=decimals_; }
+  function name() public view virtual override returns(string memory){ return _name; }
+  function symbol() public view virtual override returns(string memory){ return _symbol; }
+  function decimals() public view virtual override returns(uint8){ return _decimals; }
+  function totalSupply() public view virtual override returns(uint256){ return _totalSupply; }
+  function balanceOf(address a) public view virtual override returns(uint256){ return _balances[a]; }
+  function transfer(address to,uint256 val) public virtual override returns(bool){ _transfer(_msgSender(),to,val); return true; }
+  function allowance(address o,address s) public view virtual override returns(uint256){ return _allowances[o][s]; }
+  function approve(address s,uint256 v) public virtual override returns(bool){ _approve(_msgSender(),s,v); return true; }
+  function transferFrom(address f,address t,uint256 v) public virtual override returns(bool){ uint256 cur=_allowances[f][_msgSender()]; require(cur>=v,"allow"); unchecked{ _approve(f,_msgSender(),cur-v); } _transfer(f,t,v); return true; }
+  function _transfer(address f,address t,uint256 v) internal virtual { require(t!=address(0),"zero"); uint256 b=_balances[f]; require(b>=v,"bal"); unchecked{ _balances[f]=b-v; _balances[t]+=v; } emit Transfer(f,t,v); }
+  function _mint(address a,uint256 v) internal virtual { require(a!=address(0),"zero"); _totalSupply+=v; _balances[a]+=v; emit Transfer(address(0),a,v); }
+  function _approve(address o,address s,uint256 v) internal virtual { require(o!=address(0)&&s!=address(0),"zero"); _allowances[o][s]=v; emit Approval(o,s,v); }
+}
+contract MyToken is ERC20 {
+  constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_)
+    ERC20(name_, symbol_, decimals_) {
+    _mint(_msgSender(), initialSupplyHuman_ * (10 ** decimals_));
+  }
+}
+`;
+
+    // ---------- app state ----------
+    let wallet = null;
+    const $ = (id)=>document.getElementById(id);
+    function logRow(type,msg){
+      const r=document.createElement("div"); r.className="log-row";
+      const ts=document.createElement("div"); ts.className="mono text-zinc-400"; ts.textContent=new Date().toLocaleTimeString();
+      const b=document.createElement("div");
+      const tag=document.createElement("span"); tag.className=`tag ${type==="ok"?"ok":type==="err"?"err":"info"}`; tag.textContent=type.toUpperCase();
+      const span=document.createElement("span"); span.className="ml-2"; span.textContent=msg;
+      b.appendChild(tag); b.appendChild(span); r.appendChild(ts); r.appendChild(b);
+      $("logs").prepend(r);
+    }
+
+    async function refreshBNB(){
+      if(!wallet) return;
+      const weiHex = await rpc("eth_getBalance",[wallet.address,"latest"]);
+      $("bal").textContent = `${ethers.formatEther(BigInt(weiHex))} BNB`;
+    }
+
+    // wallet recovery only
+    $("recover").onclick=()=>{
       const pk = $("priv").value.trim();
-      if(!pk.startsWith("0x")) return log("Invalid private key");
+      if(!pk || !pk.startsWith("0x")) return logRow("err","Invalid private key");
       wallet = new ethers.Wallet(pk);
       $("addr").textContent = wallet.address;
-      log("Wallet recovered");
+      $("status").style.display = "inline-flex";
+      document.getElementById("networkActions").classList.remove("hidden");
+      logRow("ok","Wallet recovered"); refreshBNB();
     };
+    $("copyAddr").onclick=async()=>{ const a=$("addr").textContent.trim(); if(a){ await navigator.clipboard.writeText(a); logRow("ok","Address copied"); } };
+    $("check").onclick = refreshBNB;
 
-    $("deploy").onclick = async ()=>{
+    $("ping").onclick=async()=>{
       try{
-        if(!wallet) return log("Generate or recover wallet first");
-        const name = $("name").value.trim();
-        const sym  = $("symbol").value.trim();
-        if(!name||!sym) return log("Enter name and symbol");
-
-        const iface = new ethers.Interface(ABI);
-        const data  = BYTECODE + iface.encodeDeploy([name,sym]).slice(2);
-        const [gasHex, nonceHex] = await Promise.all([
-          fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json()).then(j=>j.result),
-          fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getTransactionCount",params:[wallet.address,"latest"]})}).then(r=>r.json()).then(j=>j.result)
-        ]);
-        const tx = {
-          data, gasPrice: BigInt(gasHex), nonce: parseInt(nonceHex,16),
-          gasLimit: 800000n, chainId:16979, type:0
-        };
-        const signed = await wallet.signTransaction(tx);
-        const res = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_sendRawTransaction",params:[signed]})});
-        const {result:hash} = await res.json();
-        log("TX sent: "+hash);
-      }catch(e){log("Error: "+(e.message||e));}
+        const [bnHex, gasHex] = await Promise.all([rpc("eth_blockNumber",[]), rpc("eth_gasPrice",[])]);
+        logRow("info",`Ping OK (block ${parseInt(bnHex,16)}, gas ${(Number(BigInt(gasHex))/1e9).toFixed(3)} gwei)`);
+      }catch(e){ logRow("err","Ping failed: "+(e.message||e)); }
     };
+
+    // compile with solc-js (wait loader)
+    function compile(src){
+      const input = { language:"Solidity", sources:{"MyToken.sol":{content:src}},
+        settings:{ outputSelection:{"*":{"*":["abi","evm.bytecode"]}} } };
+      const out = JSON.parse(window.solc.compile(JSON.stringify(input)));
+      if(out.errors){
+        const fatal = out.errors.find(e=>e.severity==="error");
+        if(fatal) throw new Error(fatal.formattedMessage || fatal.message);
+      }
+      const c = out.contracts["MyToken.sol"]["MyToken"];
+      return { abi:c.abi, bytecode:"0x"+c.evm.bytecode.object };
+    }
+
+    async function sendSigned({ to, data, value=0n, gasLimit=1_200_000n }){
+      if(!wallet) throw new Error("wallet not ready");
+      const [gHex,nHex] = await Promise.all([rpc("eth_gasPrice",[]), rpc("eth_getTransactionCount",[wallet.address,"latest"])]);
+      const tx = { to, data, value, gasLimit, gasPrice:BigInt(gHex), nonce:parseInt(nHex,16), chainId:16979, type:0 };
+      const signed = await wallet.signTransaction(tx);
+      return await rpc("eth_sendRawTransaction",[signed]);
+    }
+
+    // modal
+    const txModal = document.getElementById("txModal");
+    const txBody  = document.getElementById("txBody");
+    document.getElementById("txClose").onclick=()=>{ txModal.style.display="none"; };
+
+    // deploy (name+symbol only; decimals=18, initial=1,000,000)
+    document.getElementById("deploy").onclick = async ()=>{
+      try{
+        if(!wallet) return logRow("err","Recover wallet first");
+        const name = document.getElementById("name").value.trim();
+        const sym  = document.getElementById("symbol").value.trim();
+        if(!name || !sym) return logRow("err","Enter name and symbol");
+
+        logRow("info","Loading compiler..."); const ok = await ensureSolc(); if(!ok) throw new Error("solc not loaded");
+        logRow("info","Compiling..."); const { abi, bytecode } = compile(SRC);
+
+        const iface = new ethers.Interface(abi);
+        const decimals = 18;
+        const humanSupply = 1_000_000n;
+        const data = bytecode + iface.encodeDeploy([name, sym, decimals, humanSupply]).slice(2);
+
+        logRow("info","Deploying..."); const hash = await sendSigned({ data });
+        txBody.innerHTML = `<div><strong>Status:</strong> <span class="tag info">SENT</span></div>
+          <div class="mt-2"><strong>Hash</strong></div><div class="sig mono">${hash}</div>`;
+        txModal.style.display="block";
+        logRow("info","TX sent: "+hash);
+
+        // wait receipt / contract address
+        let receipt=null, until=Date.now()+120000;
+        while(Date.now()<until){
+          receipt = await rpc("eth_getTransactionReceipt",[hash]);
+          if(receipt && receipt.contractAddress) break;
+          await new Promise(r=>setTimeout(r,1500));
+        }
+        if(!(receipt && receipt.status==="0x1")) return logRow("err","Deploy failed or timeout");
+
+        const ca = receipt.contractAddress;
+        logRow("ok","Deployed at "+ca);
+        document.getElementById("summary").classList.remove("hidden");
+        document.getElementById("ca").textContent = ca;
+
+        // read your token balance
+        const ierc20 = new ethers.Interface([
+          "function decimals() view returns (uint8)",
+          "function balanceOf(address) view returns (uint256)"
+        ]);
+        const decHex = await rpc("eth_call", [{to:ca, data: ierc20.encodeFunctionData("decimals",[])}, "latest"]);
+        const dec = Number( ierc20.decodeFunctionResult("decimals", decHex)[0] );
+        const balHex = await rpc("eth_call", [{to:ca, data: ierc20.encodeFunctionData("balanceOf",[wallet.address])}, "latest"]);
+        const balWei = ierc20.decodeFunctionResult("balanceOf", balHex)[0];
+        document.getElementById("mytok").textContent = ethers.formatUnits(balWei, dec);
+
+      }catch(e){
+        logRow("err","Deploy error: "+(e.message||e));
+      }
+    };
+
+    document.getElementById("clear").onclick=()=>{ document.getElementById("logs").innerHTML=""; };
   </script>
-</head>
-<body class="flex flex-col items-center pt-10">
-  <div class="card w-full max-w-xl space-y-4">
-    <h1 class="text-xl font-semibold text-center">⚡ One-Click Token Deployer (BSSC)</h1>
-    <div>
-      <div class="text-xs uppercase text-zinc-400 mb-1">Your Wallet</div>
-      <div id="addr" class="mono text-sm break-all">—</div>
-      <input id="priv" class="field mt-2 w-full" placeholder="Private key (0x…)" />
-      <div class="flex gap-2 mt-2">
-        <button id="gen" class="primary flex-1">Generate</button>
-        <button id="recover" class="ghost flex-1">Recover</button>
-      </div>
-    </div>
-    <div class="divider border-t border-zinc-700 my-2"></div>
-    <div>
-      <input id="name" class="field w-full mb-2" placeholder="Token name (e.g., Gnocchi)" />
-      <input id="symbol" class="field w-full" placeholder="Symbol (e.g., GNOC)" />
-      <button id="deploy" class="primary w-full mt-3">Deploy Token</button>
-    </div>
-    <div id="log" class="mono text-xs text-zinc-400 whitespace-pre-wrap break-words pt-3">Ready.</div>
-  </div>
 </body>
 </html>
