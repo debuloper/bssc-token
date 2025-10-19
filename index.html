@@ -6,20 +6,14 @@
   <title>BSSC Token Deployer (Browser solc)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- =======================
-       1) ethers (UMD 版)
-       ======================= -->
+  <!-- ethers (UMD) -->
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
 
-  <!-- =======================
-       2) solc-js (ブラウザ向け)
-       soljson -> wrapper の順で読み込む
-       ======================= -->
+  <!-- solc-js: soljson → wrapper の順でロード -->
   <script src="https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/wrapper.min.js"></script>
   <script>
-    // soljson (Module) が先にロードされている前提
-    // wrapper(Module) でブラウザ用 solc を初期化
+    // 公式の手順： wrapper(Module) でブラウザ版 solc を初期化
     window.solc = window.wrapper(window.Module);
   </script>
 
@@ -99,42 +93,24 @@
     </section>
   </main>
 
-<!-- ========================
-     メインスクリプト（通常 script）
-     ======================== -->
 <script>
-  // ===== Config =====
   const RPC       = "https://bssc-rpc.bssc.live";
   const CHAIN_ID  = 16979;
   const DECIMALS  = 9n;
-  const SUPPLY_H  = 1_000_000n;    // human 表記（100万）
-  // constructor には human 値（SUPPLY_H）を渡す。コントラクト内部で 10**decimals 乗算。
+  const SUPPLY_H  = 1_000_000n;
 
-  // ===== Base contract =====
   const SRC = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
-
 contract MyToken {
-    string private _name;
-    string private _symbol;
-    uint8  private _decimals;
-    uint256 private _totalSupply;
-    mapping(address=>uint256) private _bal;
-    mapping(address=>mapping(address=>uint256)) private _allow;
-
+    string private _name; string private _symbol; uint8 private _decimals;
+    uint256 private _totalSupply; mapping(address=>uint256) private _bal;
     event Transfer(address indexed from, address indexed to, uint256 value);
-    event Approval(address indexed owner, address indexed spender, uint256 value);
-
     constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_) {
-        _name = name_;
-        _symbol = symbol_;
-        _decimals = decimals_;
+        _name = name_; _symbol = symbol_; _decimals = decimals_;
         uint256 amount = initialSupplyHuman_ * (10 ** decimals_);
-        _totalSupply = amount;
-        _bal[msg.sender] = amount;
+        _totalSupply = amount; _bal[msg.sender] = amount;
         emit Transfer(address(0), msg.sender, amount);
     }
-
     function name() public view returns (string memory) { return _name; }
     function symbol() public view returns (string memory) { return _symbol; }
     function decimals() public view returns (uint8) { return _decimals; }
@@ -145,120 +121,101 @@ contract MyToken {
   const $ = id => document.getElementById(id);
   const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
         health = $("health"), inlineErr = $("inlineErr");
+  const { ethers } = window;
 
   const log = (m,t="INFO")=>{
     const row=document.createElement("div");row.className="row";
     row.innerHTML=`<div><span class="tag ${t==="OK"?"ok":t==="ERR"?"err":""}">${t}</span></div><div class="font-mono break-all">${m}</div>`;
     logs.prepend(row);
   };
-
   const showErr = m=>{ inlineErr.textContent="✕ "+m; inlineErr.classList.remove("hidden"); };
   const hideErr = ()=>inlineErr.classList.add("hidden");
 
-  // ===== Wallet setup =====
   let wallet;
-  const { ethers } = window;                    // UMD で global に展開済み
   const provider = new ethers.JsonRpcProvider(RPC);
 
-  function hydrate() {
-    addrEl.textContent = wallet.address;
-    pkEl.value = wallet.privateKey;
-  }
-
-  function ensureWallet() {
+  function hydrate(){ addrEl.textContent = wallet.address; pkEl.value = wallet.privateKey; }
+  function ensureWallet(){
     const saved = localStorage.getItem("privkey");
-    if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
-      wallet = new ethers.Wallet(saved, provider);
-      log("Recovered wallet", "OK");
-    } else {
-      wallet = ethers.Wallet.createRandom().connect(provider);
-      localStorage.setItem("privkey", wallet.privateKey);
-      log("Generated new wallet", "OK");
-    }
+    if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) { wallet = new ethers.Wallet(saved, provider); log("Recovered wallet","OK"); }
+    else { wallet = ethers.Wallet.createRandom().connect(provider); localStorage.setItem("privkey", wallet.privateKey); log("Generated new wallet","OK"); }
     hydrate();
   }
   window.addEventListener("load", ensureWallet);
 
   $("recover").onclick = ()=>{
-    const v = (pkEl.value||"").trim();
-    if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key format", "ERR"); return; }
-    wallet = new ethers.Wallet(v, provider);
-    localStorage.setItem("privkey", wallet.privateKey);
-    hydrate();
-    log("Recovered wallet", "OK");
+    const v=(pkEl.value||"").trim();
+    if(!/^0x[0-9a-fA-F]{64}$/.test(v)){ log("Invalid private key format","ERR"); return; }
+    wallet = new ethers.Wallet(v, provider); localStorage.setItem("privkey", wallet.privateKey); hydrate(); log("Recovered wallet","OK");
   };
-
   $("copyAddr").onclick = async()=>{ await navigator.clipboard.writeText(wallet.address); log("Address copied","OK"); };
   $("copyPk").onclick   = async()=>{ await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied","OK"); };
   $("clear").onclick    = ()=>logs.innerHTML="";
 
   $("check").onclick = async()=>{
-    try {
+    try{
       const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getBalance",params:[wallet.address,"latest"]})});
       const j=await r.json(); if(j.error) throw new Error(j.error.message);
-      balEl.textContent = ethers.formatEther(BigInt(j.result));
+      balEl.textContent = ethers.formatEther(BigInt(j.result)); health.classList.remove("hidden");
       log("Checked BNB balance","OK");
-      health.classList.remove("hidden");
-    } catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
+    }catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
   };
   $("check").click();
 
-  // ===== solc compile =====
-  async function compileSource() {
+  // --- ★ solc の安全な呼び出しヘルパー（compile / compileStandard / compileStandardWrapper を順に探す）
+  function getSolcCompileFn() {
+    const s = window.solc || window.Solc || {};
+    return s.compile || s.compileStandard || s.compileStandardWrapper || null;
+  }
+
+  async function compileSource(){
     hideErr();
-
-    // 入力
     const name=$("name").value.trim(), symbol=$("symbol").value.trim();
-    if(!name||!symbol){showErr("Enter name/symbol");throw new Error("invalid input");}
+    if(!name||!symbol){ showErr("Enter name/symbol"); throw new Error("invalid input"); }
 
-    // solc は wrapper で既に初期化済み（ready 待ちは不要）
+    const compileFn = getSolcCompileFn();
+    if(!compileFn){ showErr("solc compile function not found"); throw new Error("solc missing"); }
+
     const input={
       language:"Solidity",
       sources:{"MyToken.sol":{content:SRC}},
-      settings:{
-        optimizer:{enabled:true,runs:200},
-        outputSelection:{"*":{"*":["abi","evm.bytecode.object"]}}
-      }
+      settings:{ optimizer:{enabled:true,runs:200}, outputSelection:{"*":{"*":["abi","evm.bytecode.object"]}} }
     };
 
     log("Compiling…");
-    const output=JSON.parse(window.solc.compile(JSON.stringify(input)));
+    const outStr = compileFn(JSON.stringify(input));
+    const output = JSON.parse(outStr);
     if(output.errors){
       const err=output.errors.find(e=>e.severity==="error");
       output.errors.forEach(e=>log(e.formattedMessage,e.severity==="error"?"ERR":"INFO"));
-      if(err){showErr("Solidity compile failed");throw new Error("compile failed");}
+      if(err){ showErr("Solidity compile failed"); throw new Error("compile failed"); }
     }
     const c=output.contracts["MyToken.sol"]["MyToken"];
     log("Compile success","OK");
-    return{abi:c.abi,bytecode:"0x"+c.evm.bytecode.object,name,symbol};
+    return { abi:c.abi, bytecode:"0x"+c.evm.bytecode.object, name, symbol };
   }
 
-  // ===== Deploy =====
   async function deployCompiled({abi,bytecode,name,symbol}){
     try{
       const factory=new ethers.ContractFactory(abi,bytecode,wallet);
-
-      // gasPrice を取得（失敗したら 1 gwei）
-      const gasPriceData=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json());
-      const gasPrice=gasPriceData?.result?BigInt(gasPriceData.result):1_000_000_000n;
+      const gasPriceHex=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json()).then(j=>j.result).catch(()=>null);
+      const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : 1_000_000_000n; // fallback 1 gwei
 
       log("Deploying contract…");
-      const contract=await factory.deploy(name,symbol,Number(DECIMALS),SUPPLY_H,{gasPrice});
+      const contract = await factory.deploy(name, symbol, Number(DECIMALS), SUPPLY_H, { gasPrice });
 
-      const depTx = contract.deploymentTransaction?.() || contract.deploymentTransaction; // v6 の差異対策
+      const depTx = contract.deploymentTransaction?.() || contract.deploymentTransaction;
       if (depTx?.hash) log(`TX sent: ${depTx.hash}`);
 
       await contract.waitForDeployment();
-      const addr=await contract.getAddress();
+      const addr = await contract.getAddress();
       log(`Deployed at ${addr}`,"OK");
-
       $("check").click();
     }catch(e){
       const msg = e?.reason || e?.error?.message || e?.message || String(e);
-      showErr(msg);
-      log("Deploy error: "+msg,"ERR");
+      showErr(msg); log("Deploy error: "+msg,"ERR");
     }
   }
 
