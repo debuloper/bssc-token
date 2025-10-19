@@ -6,9 +6,22 @@
   <title>BSSC Token Deployer (Browser solc)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- solc-js (WASM) & ethers -->
-  <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js"></script>
+  <!-- =======================
+       1) ethers (UMD 版)
+       ======================= -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
+
+  <!-- =======================
+       2) solc-js (ブラウザ向け)
+       soljson -> wrapper の順で読み込む
+       ======================= -->
+  <script src="https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/wrapper.min.js"></script>
+  <script>
+    // soljson (Module) が先にロードされている前提
+    // wrapper(Module) でブラウザ用 solc を初期化
+    window.solc = window.wrapper(window.Module);
+  </script>
 
   <style>
     :root{ --stroke:rgba(255,255,255,.08); --ink:#e5e7eb; }
@@ -86,46 +99,48 @@
     </section>
   </main>
 
-<script type="module">
+<!-- ========================
+     メインスクリプト（通常 script）
+     ======================== -->
+<script>
   // ===== Config =====
   const RPC       = "https://bssc-rpc.bssc.live";
   const CHAIN_ID  = 16979;
   const DECIMALS  = 9n;
-  const SUPPLY_H  = 1_000_000n;
-  const SUPPLY    = SUPPLY_H * 10n ** DECIMALS;
+  const SUPPLY_H  = 1_000_000n;    // human 表記（100万）
+  // constructor には human 値（SUPPLY_H）を渡す。コントラクト内部で 10**decimals 乗算。
 
   // ===== Base contract =====
-  const SRC = `
-  // SPDX-License-Identifier: MIT
-  pragma solidity ^0.8.20;
+  const SRC = `// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
 
-  contract MyToken {
-      string private _name;
-      string private _symbol;
-      uint8  private _decimals;
-      uint256 private _totalSupply;
-      mapping(address=>uint256) private _bal;
-      mapping(address=>mapping(address=>uint256)) private _allow;
+contract MyToken {
+    string private _name;
+    string private _symbol;
+    uint8  private _decimals;
+    uint256 private _totalSupply;
+    mapping(address=>uint256) private _bal;
+    mapping(address=>mapping(address=>uint256)) private _allow;
 
-      event Transfer(address indexed from, address indexed to, uint256 value);
-      event Approval(address indexed owner, address indexed spender, uint256 value);
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 
-      constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_) {
-          _name = name_;
-          _symbol = symbol_;
-          _decimals = decimals_;
-          uint256 amount = initialSupplyHuman_ * (10 ** decimals_);
-          _totalSupply = amount;
-          _bal[msg.sender] = amount;
-          emit Transfer(address(0), msg.sender, amount);
-      }
+    constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_) {
+        _name = name_;
+        _symbol = symbol_;
+        _decimals = decimals_;
+        uint256 amount = initialSupplyHuman_ * (10 ** decimals_);
+        _totalSupply = amount;
+        _bal[msg.sender] = amount;
+        emit Transfer(address(0), msg.sender, amount);
+    }
 
-      function name() public view returns (string memory) { return _name; }
-      function symbol() public view returns (string memory) { return _symbol; }
-      function decimals() public view returns (uint8) { return _decimals; }
-      function totalSupply() public view returns (uint256) { return _totalSupply; }
-      function balanceOf(address a) public view returns (uint256) { return _bal[a]; }
-  }`;
+    function name() public view returns (string memory) { return _name; }
+    function symbol() public view returns (string memory) { return _symbol; }
+    function decimals() public view returns (uint8) { return _decimals; }
+    function totalSupply() public view returns (uint256) { return _totalSupply; }
+    function balanceOf(address a) public view returns (uint256) { return _bal[a]; }
+}`;
 
   const $ = id => document.getElementById(id);
   const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
@@ -142,7 +157,13 @@
 
   // ===== Wallet setup =====
   let wallet;
+  const { ethers } = window;                    // UMD で global に展開済み
   const provider = new ethers.JsonRpcProvider(RPC);
+
+  function hydrate() {
+    addrEl.textContent = wallet.address;
+    pkEl.value = wallet.privateKey;
+  }
 
   function ensureWallet() {
     const saved = localStorage.getItem("privkey");
@@ -154,18 +175,16 @@
       localStorage.setItem("privkey", wallet.privateKey);
       log("Generated new wallet", "OK");
     }
-    addrEl.textContent = wallet.address;
-    pkEl.value = wallet.privateKey;
+    hydrate();
   }
-
   window.addEventListener("load", ensureWallet);
 
   $("recover").onclick = ()=>{
     const v = (pkEl.value||"").trim();
-    if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key", "ERR"); return; }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key format", "ERR"); return; }
     wallet = new ethers.Wallet(v, provider);
     localStorage.setItem("privkey", wallet.privateKey);
-    addrEl.textContent = wallet.address;
+    hydrate();
     log("Recovered wallet", "OK");
   };
 
@@ -183,18 +202,17 @@
       health.classList.remove("hidden");
     } catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
   };
-
   $("check").click();
 
   // ===== solc compile =====
   async function compileSource() {
     hideErr();
+
+    // 入力
     const name=$("name").value.trim(), symbol=$("symbol").value.trim();
     if(!name||!symbol){showErr("Enter name/symbol");throw new Error("invalid input");}
 
-    log("Loading solc (WASM)…");
-    await window.solc.ready;
-
+    // solc は wrapper で既に初期化済み（ready 待ちは不要）
     const input={
       language:"Solidity",
       sources:{"MyToken.sol":{content:SRC}},
@@ -216,21 +234,32 @@
     return{abi:c.abi,bytecode:"0x"+c.evm.bytecode.object,name,symbol};
   }
 
+  // ===== Deploy =====
   async function deployCompiled({abi,bytecode,name,symbol}){
     try{
       const factory=new ethers.ContractFactory(abi,bytecode,wallet);
+
+      // gasPrice を取得（失敗したら 1 gwei）
       const gasPriceData=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json());
       const gasPrice=gasPriceData?.result?BigInt(gasPriceData.result):1_000_000_000n;
 
       log("Deploying contract…");
       const contract=await factory.deploy(name,symbol,Number(DECIMALS),SUPPLY_H,{gasPrice});
-      log(`TX sent: ${contract.deployTransaction.hash}`);
-      const deployed=await contract.waitForDeployment();
-      const addr=await deployed.getAddress();
+
+      const depTx = contract.deploymentTransaction?.() || contract.deploymentTransaction; // v6 の差異対策
+      if (depTx?.hash) log(`TX sent: ${depTx.hash}`);
+
+      await contract.waitForDeployment();
+      const addr=await contract.getAddress();
       log(`Deployed at ${addr}`,"OK");
+
       $("check").click();
-    }catch(e){showErr(e?.message||e);log("Deploy error: "+(e?.message||e),"ERR");}
+    }catch(e){
+      const msg = e?.reason || e?.error?.message || e?.message || String(e);
+      showErr(msg);
+      log("Deploy error: "+msg,"ERR");
+    }
   }
 
   $("compile").onclick=async()=>{try{await compileSource();}catch(e){log(e.message,"ERR");}};
