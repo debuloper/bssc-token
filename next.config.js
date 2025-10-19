@@ -1,0 +1,8 @@
+headers: [
+  {
+    source: "/(.*)",
+    headers: [
+      { key: "Cross-Origin-Resource-Policy", value: "cross-origin" }
+    ]
+  }
+]
