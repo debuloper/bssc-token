@@ -3,47 +3,40 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BSSC Token Deployer (Browser solc)</title>
+  <title>BSSC Token Deployer — Browser Wallet (precompiled)</title>
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- ethers (UMD) -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.umd.min.js"></script>
-
-  <!-- solc-js: soljson → wrapper の順でロード -->
-  <script src="https://binaries.soliditylang.org/bin/soljson-v0.8.20+commit.a1b79de6.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/wrapper.min.js"></script>
-  <script>
-    // 公式の手順： wrapper(Module) でブラウザ版 solc を初期化
-    window.solc = window.wrapper(window.Module);
-  </script>
-
   <style>
-    :root{ --stroke:rgba(255,255,255,.08); --ink:#e5e7eb; }
+    :root{ --stroke:rgba(255,255,255,.08); --ink:#e5e7eb; --muted:#94a3b8; }
     .shell{ max-width:980px; margin:0 auto; padding:32px 16px }
     .card{ background:#10111a; border:1px solid var(--stroke); border-radius:16px; padding:20px; box-shadow:0 10px 24px rgba(0,0,0,.35) }
+    .title{ font-size:22px; font-weight:800; letter-spacing:.2px }
     .field{ width:100%; background:#0f1117; border:1px solid var(--stroke); border-radius:12px; padding:12px 14px; color:var(--ink); outline:none }
-    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:white; font-weight:800; border-radius:12px; padding:12px 18px; box-shadow:0 10px 26px rgba(79,70,229,.35) }
+    .field::placeholder{ color:#64748b }
+    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:white; font-weight:800; border-radius:12px; padding:12px 18px; transition:.14s; box-shadow:0 10px 26px rgba(79,70,229,.35) }
+    .primary:hover{ filter:brightness(1.08); transform:translateY(-1px) }
     .ghost{ background:#ffffff10; border:1px solid var(--stroke); color:var(--ink); border-radius:12px; padding:10px 14px }
     .pill{ display:inline-flex; align-items:center; gap:8px; border-radius:9999px; padding:6px 10px; font-weight:700; border:1px solid var(--stroke) }
     .ok{ background:#052e2b; color:#86efac; border-color:#134e4a }
     .err{ background:#421919; color:#fecaca; border-color:#7f1d1d }
-    .row{ display:grid; grid-template-columns:110px 1fr; gap:10px; padding:10px 12px; border-bottom:1px solid var(--stroke) }
     .tag{ font-size:11px; padding:2px 8px; border-radius:9999px; font-weight:700 }
     .tag.ok{ background:#064e3b; color:#6ee7b7 }
     .tag.err{ background:#5f1b1b; color:#fecaca }
+    .row{ display:grid; grid-template-columns:110px 1fr; gap:10px; padding:10px 12px; border-bottom:1px solid var(--stroke) }
     #logs{ min-height:120px }
   </style>
 </head>
 <body>
   <main class="shell space-y-6">
+    <!-- header -->
     <header class="flex items-center justify-between">
-      <div class="text-2xl font-extrabold tracking-tight">BSSC Token Deployer (Browser solc)</div>
+      <div class="title">BSSC Token Deployer — Browser Wallet (precompiled)</div>
       <div id="health" class="pill ok hidden"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>HEALTHY</div>
     </header>
 
-    <!-- Wallet -->
+    <!-- wallet -->
     <section class="card space-y-3">
       <div class="text-xs uppercase text-zinc-400">Your wallet</div>
+
       <div class="row">
         <div class="text-zinc-500">Address</div>
         <div class="flex items-center justify-between gap-3">
@@ -55,6 +48,7 @@
           </div>
         </div>
       </div>
+
       <div class="row">
         <div class="text-zinc-500">Private key</div>
         <div class="flex items-center justify-between gap-3">
@@ -62,28 +56,48 @@
           <button id="copyPk" class="ghost">Copy</button>
         </div>
       </div>
+
       <div class="row">
         <div class="text-zinc-500">BNB Balance</div>
         <div><span id="bal" class="font-mono">—</span> <span class="text-zinc-400">BNB</span></div>
       </div>
     </section>
 
-    <!-- Deploy -->
+    <!-- precompiled JSON -->
+    <section class="card space-y-3">
+      <div class="text-xs uppercase text-zinc-400">Precompiled contract JSON</div>
+      <div class="grid md:grid-cols-2 gap-3">
+        <input id="jsonFile" type="file" accept=".json" class="field"/>
+        <textarea id="jsonText" rows="3" class="field font-mono" placeholder="Paste your Remix Compilation Details JSON here (optional)"></textarea>
+      </div>
+      <div class="text-sm text-zinc-400">
+        This JSON must contain <code>abi</code> and <code>bytecode.object</code> (or top-level <code>bytecode</code>/<code>object</code>).
+      </div>
+      <div id="jsonState" class="text-sm text-emerald-300 hidden"></div>
+    </section>
+
+    <!-- deploy -->
     <section class="card space-y-3">
       <div class="text-xs uppercase text-zinc-400">Deploy new ERC-20</div>
+
       <div class="grid md:grid-cols-2 gap-3">
         <input id="name" class="field" placeholder="Token name (e.g., Demo Token)"/>
         <input id="symbol" class="field" placeholder="Symbol (e.g., DMO)"/>
       </div>
-      <div class="text-sm text-zinc-400">Decimals = <b>9</b>, Initial Supply = <b>1,000,000</b> (minted to your wallet)</div>
+
+      <div class="grid md:grid-cols-2 gap-3">
+        <input id="dec" class="field" placeholder="Decimals (default 9)" value="9"/>
+        <input id="supply" class="field" placeholder="Initial supply (human, default 1000000)" value="1000000"/>
+      </div>
+
       <div id="inlineErr" class="text-rose-300 text-sm hidden"></div>
-      <div class="flex items-center gap-2">
-        <button id="compile" class="ghost">Compile only</button>
-        <button id="deploy" class="primary">Compile & Deploy</button>
+
+      <div class="flex justify-end">
+        <button id="deploy" class="primary">Deploy</button>
       </div>
     </section>
 
-    <!-- Activity -->
+    <!-- activity -->
     <section class="card space-y-2">
       <div class="flex items-center justify-between">
         <div class="text-xs uppercase text-zinc-400">Activity</div>
@@ -93,134 +107,212 @@
     </section>
   </main>
 
-<script>
-  const RPC       = "https://bssc-rpc.bssc.live";
-  const CHAIN_ID  = 16979;
-  const DECIMALS  = 9n;
-  const SUPPLY_H  = 1_000_000n;
+  <!-- ethers v6 -->
+  <script type="module">
+    import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
 
-  const SRC = `// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
-contract MyToken {
-    string private _name; string private _symbol; uint8 private _decimals;
-    uint256 private _totalSupply; mapping(address=>uint256) private _bal;
-    event Transfer(address indexed from, address indexed to, uint256 value);
-    constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_) {
-        _name = name_; _symbol = symbol_; _decimals = decimals_;
-        uint256 amount = initialSupplyHuman_ * (10 ** decimals_);
-        _totalSupply = amount; _bal[msg.sender] = amount;
-        emit Transfer(address(0), msg.sender, amount);
-    }
-    function name() public view returns (string memory) { return _name; }
-    function symbol() public view returns (string memory) { return _symbol; }
-    function decimals() public view returns (uint8) { return _decimals; }
-    function totalSupply() public view returns (uint256) { return _totalSupply; }
-    function balanceOf(address a) public view returns (uint256) { return _bal[a]; }
-}`;
+    // ===== Config =====
+    const RPC = "https://bssc-rpc.bssc.live";
+    const CHAIN_ID = 16979;
 
-  const $ = id => document.getElementById(id);
-  const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
-        health = $("health"), inlineErr = $("inlineErr");
-  const { ethers } = window;
+    // ===== DOM refs =====
+    const $ = id => document.getElementById(id);
+    const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
+          health = $("health"), inlineErr = $("inlineErr"), jsonState = $("jsonState");
 
-  const log = (m,t="INFO")=>{
-    const row=document.createElement("div");row.className="row";
-    row.innerHTML=`<div><span class="tag ${t==="OK"?"ok":t==="ERR"?"err":""}">${t}</span></div><div class="font-mono break-all">${m}</div>`;
-    logs.prepend(row);
-  };
-  const showErr = m=>{ inlineErr.textContent="✕ "+m; inlineErr.classList.remove("hidden"); };
-  const hideErr = ()=>inlineErr.classList.add("hidden");
+    const showErr = (msg) => { inlineErr.textContent = "✕ " + msg; inlineErr.classList.remove("hidden"); };
+    const hideErr = () => inlineErr.classList.add("hidden");
 
-  let wallet;
-  const provider = new ethers.JsonRpcProvider(RPC);
-
-  function hydrate(){ addrEl.textContent = wallet.address; pkEl.value = wallet.privateKey; }
-  function ensureWallet(){
-    const saved = localStorage.getItem("privkey");
-    if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) { wallet = new ethers.Wallet(saved, provider); log("Recovered wallet","OK"); }
-    else { wallet = ethers.Wallet.createRandom().connect(provider); localStorage.setItem("privkey", wallet.privateKey); log("Generated new wallet","OK"); }
-    hydrate();
-  }
-  window.addEventListener("load", ensureWallet);
-
-  $("recover").onclick = ()=>{
-    const v=(pkEl.value||"").trim();
-    if(!/^0x[0-9a-fA-F]{64}$/.test(v)){ log("Invalid private key format","ERR"); return; }
-    wallet = new ethers.Wallet(v, provider); localStorage.setItem("privkey", wallet.privateKey); hydrate(); log("Recovered wallet","OK");
-  };
-  $("copyAddr").onclick = async()=>{ await navigator.clipboard.writeText(wallet.address); log("Address copied","OK"); };
-  $("copyPk").onclick   = async()=>{ await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied","OK"); };
-  $("clear").onclick    = ()=>logs.innerHTML="";
-
-  $("check").onclick = async()=>{
-    try{
-      const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getBalance",params:[wallet.address,"latest"]})});
-      const j=await r.json(); if(j.error) throw new Error(j.error.message);
-      balEl.textContent = ethers.formatEther(BigInt(j.result)); health.classList.remove("hidden");
-      log("Checked BNB balance","OK");
-    }catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
-  };
-  $("check").click();
-
-  // --- ★ solc の安全な呼び出しヘルパー（compile / compileStandard / compileStandardWrapper を順に探す）
-  function getSolcCompileFn() {
-    const s = window.solc || window.Solc || {};
-    return s.compile || s.compileStandard || s.compileStandardWrapper || null;
-  }
-
-  async function compileSource(){
-    hideErr();
-    const name=$("name").value.trim(), symbol=$("symbol").value.trim();
-    if(!name||!symbol){ showErr("Enter name/symbol"); throw new Error("invalid input"); }
-
-    const compileFn = getSolcCompileFn();
-    if(!compileFn){ showErr("solc compile function not found"); throw new Error("solc missing"); }
-
-    const input={
-      language:"Solidity",
-      sources:{"MyToken.sol":{content:SRC}},
-      settings:{ optimizer:{enabled:true,runs:200}, outputSelection:{"*":{"*":["abi","evm.bytecode.object"]}} }
+    const log = (msg, type="INFO") => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div><span class="tag ${type==="OK"?"ok":type==="ERR"?"err":""}">${type}</span></div>
+        <div class="font-mono break-all">${msg}</div>`;
+      logs.prepend(row);
     };
 
-    log("Compiling…");
-    const outStr = compileFn(JSON.stringify(input));
-    const output = JSON.parse(outStr);
-    if(output.errors){
-      const err=output.errors.find(e=>e.severity==="error");
-      output.errors.forEach(e=>log(e.formattedMessage,e.severity==="error"?"ERR":"INFO"));
-      if(err){ showErr("Solidity compile failed"); throw new Error("compile failed"); }
-    }
-    const c=output.contracts["MyToken.sol"]["MyToken"];
-    log("Compile success","OK");
-    return { abi:c.abi, bytecode:"0x"+c.evm.bytecode.object, name, symbol };
-  }
+    // ===== simple JSON-RPC helper =====
+    const rpc = async (method, params=[]) => {
+      const r = await fetch(RPC, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params })
+      });
+      const j = await r.json();
+      if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+      return j.result;
+    };
 
-  async function deployCompiled({abi,bytecode,name,symbol}){
-    try{
-      const factory=new ethers.ContractFactory(abi,bytecode,wallet);
-      const gasPriceHex=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json()).then(j=>j.result).catch(()=>null);
-      const gasPrice = gasPriceHex ? BigInt(gasPriceHex) : 1_000_000_000n; // fallback 1 gwei
+    // ===== Wallet bootstrap (local storage private key) =====
+    const provider = new ethers.JsonRpcProvider(RPC);
+    let wallet;
 
-      log("Deploying contract…");
-      const contract = await factory.deploy(name, symbol, Number(DECIMALS), SUPPLY_H, { gasPrice });
+    const hydrate = () => {
+      addrEl.textContent = wallet.address;
+      pkEl.value = wallet.privateKey;
+    };
 
-      const depTx = contract.deploymentTransaction?.() || contract.deploymentTransaction;
-      if (depTx?.hash) log(`TX sent: ${depTx.hash}`);
+    const ensureWallet = () => {
+      const saved = localStorage.getItem("privkey");
+      if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
+        wallet = new ethers.Wallet(saved, provider);
+        log("Recovered wallet", "OK");
+      } else {
+        wallet = ethers.Wallet.createRandom().connect(provider);
+        localStorage.setItem("privkey", wallet.privateKey);
+        log("Generated new wallet", "OK");
+      }
+      hydrate();
+    };
+    ensureWallet();
 
-      await contract.waitForDeployment();
-      const addr = await contract.getAddress();
-      log(`Deployed at ${addr}`,"OK");
-      $("check").click();
-    }catch(e){
-      const msg = e?.reason || e?.error?.message || e?.message || String(e);
-      showErr(msg); log("Deploy error: "+msg,"ERR");
-    }
-  }
+    // health ping
+    (async () => {
+      try {
+        const [bn, gp] = await Promise.all([rpc("eth_blockNumber", []), rpc("eth_gasPrice", [])]);
+        health.classList.remove("hidden");
+        log(\`Ping OK (block \${parseInt(bn,16)}, gas \${(Number(BigInt(gp))/1e9).toFixed(3)} gwei)\`);
+      } catch { /* noop */ }
+    })();
 
-  $("compile").onclick=async()=>{try{await compileSource();}catch(e){log(e.message,"ERR");}};
-  $("deploy").onclick=async()=>{try{const comp=await compileSource();await deployCompiled(comp);}catch(e){showErr(e.message);}};
-</script>
+    // UI actions
+    $("recover").onclick = () => {
+      const v = (pkEl.value || "").trim();
+      if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key format", "ERR"); return; }
+      wallet = new ethers.Wallet(v, provider);
+      localStorage.setItem("privkey", wallet.privateKey);
+      hydrate();
+      log("Recovered wallet", "OK");
+    };
+
+    $("copyAddr").onclick = async () => { await navigator.clipboard.writeText(wallet.address); log("Address copied", "OK"); };
+    $("copyPk").onclick   = async () => { await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied", "OK"); };
+    $("clear").onclick    = () => { logs.innerHTML = ""; };
+
+    $("check").onclick = async () => {
+      try {
+        const weiHex = await rpc("eth_getBalance", [wallet.address, "latest"]);
+        balEl.textContent = ethers.formatEther(BigInt(weiHex));
+        log("Checked BNB balance", "OK");
+      } catch (e) { log("Check balance error: " + (e?.message || e), "ERR"); }
+    };
+    $("check").click();
+
+    // ===== Precompiled JSON loader =====
+    let loadedAbi = null;
+    let loadedBytecode = null;
+
+    const normalizeCompJson = (obj) => {
+      // try common shapes from Remix export
+      // 1) { abi, bytecode: { object: "0x..." } }
+      // 2) { metadata: { output: { abi } }, bytecode: { object } }
+      // 3) flat { abi, bytecode } or { abi, object }
+      let abi = null, bytecode = null;
+
+      if (obj?.abi && Array.isArray(obj.abi)) abi = obj.abi;
+      if (obj?.bytecode?.object) bytecode = obj.bytecode.object;
+      if (!bytecode && typeof obj?.bytecode === "string") bytecode = obj.bytecode;
+      if (!bytecode && typeof obj?.object === "string") bytecode = obj.object;
+
+      if (!abi && obj?.metadata?.output?.abi) abi = obj.metadata.output.abi;
+      if (!bytecode && obj?.evm?.bytecode?.object) bytecode = obj.evm.bytecode.object;
+      if (!bytecode && obj?.compilerOutput?.evm?.bytecode?.object) bytecode = obj.compilerOutput.evm.bytecode.object;
+
+      if (bytecode && !bytecode.startsWith("0x")) bytecode = "0x" + bytecode;
+      return { abi, bytecode };
+    };
+
+    const setCompState = ({ abi, bytecode }) => {
+      loadedAbi = abi; loadedBytecode = bytecode;
+      if (abi && bytecode) {
+        jsonState.classList.remove("hidden");
+        jsonState.textContent = "✅ Loaded ABI & bytecode";
+        log("Loaded precompiled JSON (ABI + bytecode)", "OK");
+      } else {
+        jsonState.classList.add("hidden");
+      }
+    };
+
+    $("jsonFile").addEventListener("change", async (e) => {
+      try {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        const txt = await f.text();
+        const obj = JSON.parse(txt);
+        setCompState(normalizeCompJson(obj));
+      } catch (err) {
+        log("JSON parse error: " + (err?.message || err), "ERR");
+      }
+    });
+
+    $("jsonText").addEventListener("blur", () => {
+      try {
+        const txt = $("jsonText").value.trim();
+        if (!txt) return;
+        const obj = JSON.parse(txt);
+        setCompState(normalizeCompJson(obj));
+      } catch (err) {
+        log("JSON parse error: " + (err?.message || err), "ERR");
+      }
+    });
+
+    // ===== Deploy with precompiled JSON =====
+    $("deploy").onclick = async () => {
+      hideErr();
+      try {
+        if (!loadedAbi || !loadedBytecode) {
+          showErr("Load Remix precompiled JSON first (ABI + bytecode)");
+          return;
+        }
+        const name = $("name").value.trim();
+        const symbol = $("symbol").value.trim();
+        const decimals = Number(($("dec").value || "9").trim());
+        const supplyHuman = BigInt(($("supply").value || "1000000").trim());
+        if (!name || !symbol) { showErr("Enter name / symbol"); return; }
+        if (Number.isNaN(decimals) || decimals < 0 || decimals > 18) { showErr("Invalid decimals"); return; }
+
+        // constructor encode is handled by ContractFactory
+        const factory = new ethers.ContractFactory(loadedAbi, loadedBytecode, wallet);
+
+        // fetch price & nonce (use latest; some RPCs dislike 'pending')
+        const [gasHex, nonceHex] = await Promise.all([
+          rpc("eth_gasPrice", []),
+          rpc("eth_getTransactionCount", [wallet.address, "latest"])
+        ]);
+        const gasPrice = BigInt(gasHex || "0x3b9aca00"); // fallback 1 gwei
+        const nonce = parseInt(nonceHex, 16);
+
+        // estimateGas fallback
+        let gasLimit = 2_000_000n;
+        try {
+          const dataCalldata = ethers.concat([
+            loadedBytecode,
+            (new ethers.Interface(loadedAbi)).encodeDeploy([name, symbol, decimals, supplyHuman]).slice(2)
+          ]);
+          const est = await rpc("eth_estimateGas", [{ from: wallet.address, data: dataCalldata }]);
+          gasLimit = BigInt(est) + 50_000n;
+        } catch {}
+
+        log("Deploying contract…");
+        const contract = await factory.deploy(name, symbol, decimals, supplyHuman, {
+          gasPrice, nonce, gasLimit, type: 0 // legacy
+        });
+        log(`TX sent: ${contract.deployTransaction.hash}`);
+
+        // wait for deployment (up to ~60s)
+        const deployed = await contract.waitForDeployment();
+        const addr = await deployed.getAddress();
+        log(`Deployed at ${addr}`, "OK");
+        alert(`Deployed: ${addr}`);
+        $("check").click();
+
+      } catch (e) {
+        const msg = e?.reason || e?.error?.message || e?.message || String(e);
+        showErr(msg);
+        log("Deploy error: " + msg, "ERR");
+      }
+    };
+  </script>
 </body>
 </html>
