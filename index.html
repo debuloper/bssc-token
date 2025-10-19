@@ -6,7 +6,7 @@
   <title>BSSC Token Deployer (Browser solc)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- solc-js 0.8.20 (WASM) と ethers v6 をCDNで読込 -->
+  <!-- solc-js (WASM) & ethers -->
   <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js"></script>
 
@@ -87,17 +87,14 @@
   </main>
 
 <script type="module">
-  const { ethers } = window;
-
   // ===== Config =====
   const RPC       = "https://bssc-rpc.bssc.live";
   const CHAIN_ID  = 16979;
   const DECIMALS  = 9n;
-  const SUPPLY_H  = 1_000_000n;                       // 100万（人間単位）
-  const SUPPLY    = SUPPLY_H * 10n ** DECIMALS;       // 生の整数
+  const SUPPLY_H  = 1_000_000n;
+  const SUPPLY    = SUPPLY_H * 10n ** DECIMALS;
 
-  // 最小限のERC20（OZ無し・依存無し）
-  // constructor(name, symbol, decimals, initialSupplyHuman)
+  // ===== Base contract =====
   const SRC = `
   // SPDX-License-Identifier: MIT
   pragma solidity ^0.8.20;
@@ -128,197 +125,116 @@
       function decimals() public view returns (uint8) { return _decimals; }
       function totalSupply() public view returns (uint256) { return _totalSupply; }
       function balanceOf(address a) public view returns (uint256) { return _bal[a]; }
-
-      function transfer(address to, uint256 v) public returns (bool) {
-          require(_bal[msg.sender] >= v, "bal");
-          unchecked { _bal[msg.sender]-=v; _bal[to]+=v; }
-          emit Transfer(msg.sender, to, v);
-          return true;
-      }
-
-      function allowance(address o, address s) public view returns (uint256) { return _allow[o][s]; }
-      function approve(address s, uint256 v) public returns (bool) {
-          _allow[msg.sender][s] = v; emit Approval(msg.sender, s, v); return true;
-      }
-
-      function transferFrom(address f, address t, uint256 v) public returns (bool) {
-          uint256 a = _allow[f][msg.sender]; require(a >= v, "allow"); require(_bal[f] >= v, "bal");
-          unchecked { _allow[f][msg.sender]=a-v; _bal[f]-=v; _bal[t]+=v; }
-          emit Transfer(f, t, v); return true;
-      }
   }`;
 
-  // ===== DOM =====
   const $ = id => document.getElementById(id);
   const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
         health = $("health"), inlineErr = $("inlineErr");
 
-  const showErr = m => { inlineErr.textContent = "✕ " + m; inlineErr.classList.remove("hidden"); };
-  const hideErr = () => inlineErr.classList.add("hidden");
-  const log = (msg, type="INFO") => {
-    const row = document.createElement("div"); row.className = "row";
-    row.innerHTML = `<div><span class="tag ${type==="OK"?"ok":type==="ERR"?"err":""}">${type}</span></div>
-      <div class="font-mono break-all">${msg}</div>`;
+  const log = (m,t="INFO")=>{
+    const row=document.createElement("div");row.className="row";
+    row.innerHTML=`<div><span class="tag ${t==="OK"?"ok":t==="ERR"?"err":""}">${t}</span></div><div class="font-mono break-all">${m}</div>`;
     logs.prepend(row);
   };
 
-  // ===== Wallet =====
-  const provider = new ethers.JsonRpcProvider(RPC);
+  const showErr = m=>{ inlineErr.textContent="✕ "+m; inlineErr.classList.remove("hidden"); };
+  const hideErr = ()=>inlineErr.classList.add("hidden");
+
+  // ===== Wallet setup =====
   let wallet;
+  const provider = new ethers.JsonRpcProvider(RPC);
 
-  const hydrate = () => { addrEl.textContent = wallet.address; pkEl.value = wallet.privateKey; };
-
-  (function ensureWallet(){
+  function ensureWallet() {
     const saved = localStorage.getItem("privkey");
     if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
-      wallet = new ethers.Wallet(saved, provider); log("Recovered wallet", "OK");
+      wallet = new ethers.Wallet(saved, provider);
+      log("Recovered wallet", "OK");
     } else {
       wallet = ethers.Wallet.createRandom().connect(provider);
       localStorage.setItem("privkey", wallet.privateKey);
       log("Generated new wallet", "OK");
     }
-    hydrate();
-  })();
+    addrEl.textContent = wallet.address;
+    pkEl.value = wallet.privateKey;
+  }
 
-  $("recover").onclick = () => {
+  window.addEventListener("load", ensureWallet);
+
+  $("recover").onclick = ()=>{
     const v = (pkEl.value||"").trim();
     if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key", "ERR"); return; }
     wallet = new ethers.Wallet(v, provider);
     localStorage.setItem("privkey", wallet.privateKey);
-    hydrate(); log("Recovered wallet", "OK");
+    addrEl.textContent = wallet.address;
+    log("Recovered wallet", "OK");
   };
-  $("copyAddr").onclick = async ()=>{ await navigator.clipboard.writeText(wallet.address); log("Address copied","OK"); };
-  $("copyPk").onclick   = async ()=>{ await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied","OK"); };
 
-  $("check").onclick = async ()=> {
+  $("copyAddr").onclick = async()=>{ await navigator.clipboard.writeText(wallet.address); log("Address copied","OK"); };
+  $("copyPk").onclick   = async()=>{ await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied","OK"); };
+  $("clear").onclick    = ()=>logs.innerHTML="";
+
+  $("check").onclick = async()=>{
     try {
-      const r = await fetch(RPC, { method:"POST", headers:{ "content-type":"application/json"},
-        body: JSON.stringify({jsonrpc:"2.0", id:1, method:"eth_getBalance", params:[wallet.address,"latest"]})});
-      const j = await r.json(); if (j.error) throw new Error(j.error.message);
+      const r=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getBalance",params:[wallet.address,"latest"]})});
+      const j=await r.json(); if(j.error) throw new Error(j.error.message);
       balEl.textContent = ethers.formatEther(BigInt(j.result));
-      log("Checked BNB balance");
+      log("Checked BNB balance","OK");
       health.classList.remove("hidden");
     } catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
   };
-  $("clear").onclick = ()=> logs.innerHTML = "";
+
   $("check").click();
 
-  // ===== Compile (solc-js in browser) =====
+  // ===== solc compile =====
   async function compileSource() {
     hideErr();
-    const name = $("name").value.trim();
-    const symbol = $("symbol").value.trim();
-    if (!name || !symbol) { showErr("Name / Symbol を入力してください。"); throw new Error("invalid input"); }
+    const name=$("name").value.trim(), symbol=$("symbol").value.trim();
+    if(!name||!symbol){showErr("Enter name/symbol");throw new Error("invalid input");}
 
     log("Loading solc (WASM)…");
-    await window.solc.ready; // WASM初期化待ち
+    await window.solc.ready;
 
-    const input = {
-      language: "Solidity",
-      sources: { "MyToken.sol": { content: SRC } },
-      settings: {
-        optimizer: { enabled: true, runs: 200 },
-        outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } }
+    const input={
+      language:"Solidity",
+      sources:{"MyToken.sol":{content:SRC}},
+      settings:{
+        optimizer:{enabled:true,runs:200},
+        outputSelection:{"*":{"*":["abi","evm.bytecode.object"]}}
       }
     };
 
     log("Compiling…");
-    const output = JSON.parse(window.solc.compile(JSON.stringify(input)));
-
-    if (output.errors) {
-      const fatal = output.errors.find(e => e.severity === "error");
-      output.errors.forEach(e => log((e.severity==='error'?'ERR ':'WARN ')+e.formattedMessage, e.severity==='error'?'ERR':'INFO'));
-      if (fatal) { showErr("Solidity compile error"); throw new Error("compile failed"); }
+    const output=JSON.parse(window.solc.compile(JSON.stringify(input)));
+    if(output.errors){
+      const err=output.errors.find(e=>e.severity==="error");
+      output.errors.forEach(e=>log(e.formattedMessage,e.severity==="error"?"ERR":"INFO"));
+      if(err){showErr("Solidity compile failed");throw new Error("compile failed");}
     }
-
-    const c = output.contracts["MyToken.sol"]["MyToken"];
-    const abi = c.abi;
-    const bytecode = "0x"+c.evm.bytecode.object;
-
-    log("Compile success", "OK");
-    return { abi, bytecode, name, symbol };
+    const c=output.contracts["MyToken.sol"]["MyToken"];
+    log("Compile success","OK");
+    return{abi:c.abi,bytecode:"0x"+c.evm.bytecode.object,name,symbol};
   }
 
-  // ===== Deploy (優先はethers factory / Legacy TX) =====
-  async function deployCompiled({abi, bytecode, name, symbol}) {
-    try {
-      // ContractFactory 経由（legacy指定）
-      const gasPriceHex = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+  async function deployCompiled({abi,bytecode,name,symbol}){
+    try{
+      const factory=new ethers.ContractFactory(abi,bytecode,wallet);
+      const gasPriceData=await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
         body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json());
-      const gasPrice = gasPriceHex?.result ? BigInt(gasPriceHex.result) : 1_000_000_000n;
+      const gasPrice=gasPriceData?.result?BigInt(gasPriceData.result):1_000_000_000n;
 
-      const factory = new ethers.ContractFactory(abi, bytecode, wallet);
-      log("Sending deploy tx (factory, legacy)…");
-      const c = await factory.deploy(name, symbol, Number(DECIMALS), SUPPLY_H, { gasPrice });
-      log(`TX sent: ${c.deployTransaction.hash}`);
-      const deployed = await c.waitForDeployment();
-      const addr = await deployed.getAddress();
+      log("Deploying contract…");
+      const contract=await factory.deploy(name,symbol,Number(DECIMALS),SUPPLY_H,{gasPrice});
+      log(`TX sent: ${contract.deployTransaction.hash}`);
+      const deployed=await contract.waitForDeployment();
+      const addr=await deployed.getAddress();
       log(`Deployed at ${addr}`,"OK");
       $("check").click();
-    } catch (e) {
-      // 失敗したら raw legacy TX でフォールバック
-      log("Factory deploy failed -> fallback to raw legacy: "+(e?.message||e), "ERR");
-      await fallbackRawDeploy({abi, bytecode, name, symbol});
-    }
+    }catch(e){showErr(e?.message||e);log("Deploy error: "+(e?.message||e),"ERR");}
   }
 
-  async function fallbackRawDeploy({abi, bytecode, name, symbol}) {
-    // constructor data
-    const iface = new ethers.Interface(abi);
-    const data  = iface.encodeDeploy([name, symbol, Number(DECIMALS), SUPPLY_H]);
-    const txData = bytecode + data.slice(2);
-
-    const rpc = async (method, params=[])=>{
-      const r = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
-        body:JSON.stringify({jsonrpc:"2.0",id:Date.now(),method,params})});
-      const j = await r.json(); if (j.error) throw new Error(j.error.message); return j.result;
-    };
-
-    const [gasPriceHex, nonceHex] = await Promise.all([
-      rpc("eth_gasPrice", []),
-      rpc("eth_getTransactionCount", [wallet.address, "latest"]) // pendingは避ける
-    ]);
-    const gasPrice = BigInt(gasPriceHex);
-    let gasLimit = 2_000_000n;
-    try { gasLimit = BigInt(await rpc("eth_estimateGas", [{ from: wallet.address, data: txData }])) + 50_000n; } catch {}
-
-    const unsigned = {
-      to: null,                         // contract creation
-      data: txData,
-      gasPrice,
-      gasLimit,
-      nonce: parseInt(nonceHex, 16),
-      chainId: CHAIN_ID,
-      type: 0                           // legacy
-    };
-
-    const signed = await wallet.signTransaction(unsigned);
-    const txHash = await rpc("eth_sendRawTransaction",[signed]);
-    log(`TX sent (raw): ${txHash}`);
-
-    // wait receipt
-    let receipt=null, deadline=Date.now()+60_000;
-    while(Date.now()<deadline){
-      try { receipt = await rpc("eth_getTransactionReceipt",[txHash]); } catch {}
-      if (receipt?.contractAddress) break;
-      await new Promise(r=>setTimeout(r,1500));
-    }
-    if (!receipt?.contractAddress) { showErr("Timeout: receipt not found"); throw new Error("receipt timeout"); }
-    log(`Deployed at ${receipt.contractAddress}`,"OK");
-    $("check").click();
-  }
-
-  // Buttons
-  $("compile").onclick = async ()=>{
-    try { await compileSource(); } catch(e){ log(e.message||String(e),"ERR"); }
-  };
-
-  $("deploy").onclick = async ()=>{
-    try {
-      const comp = await compileSource();
-      await deployCompiled(comp);
-    } catch(e){ showErr(e?.message||String(e)); log("Deploy error: "+(e?.message||e),"ERR"); }
-  };
+  $("compile").onclick=async()=>{try{await compileSource();}catch(e){log(e.message,"ERR");}};
+  $("deploy").onclick=async()=>{try{const comp=await compileSource();await deployCompiled(comp);}catch(e){showErr(e.message);}};
 </script>
 </body>
 </html>
