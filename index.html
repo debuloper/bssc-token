@@ -3,114 +3,322 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>BSSC Token Deployer (EVM)</title>
+  <title>BSSC Token Deployer (Browser solc)</title>
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- solc-js 0.8.20 (WASM) と ethers v6 をCDNで読込 -->
+  <script src="https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js"></script>
+
   <style>
-    :root { --stroke: rgba(255,255,255,.06); }
-    .shell{ max-width:800px; margin:0 auto; padding:32px 16px }
-    .card{ background:#10111a; border-radius:16px; padding:24px; border:1px solid var(--stroke); box-shadow:0 10px 24px rgba(0,0,0,.4); }
-    .field{ width:100%; background:#0f1117; border:1px solid var(--stroke); border-radius:12px; padding:10px 14px; color:#e5e7eb; outline:none; }
-    .field::placeholder{ color:#6b7280 }
-    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:white; font-weight:700; border-radius:12px; padding:10px 16px; box-shadow:0 8px 24px rgba(109,40,217,.35); transition:.12s; }
-    .primary:hover{ filter:brightness(1.1); transform:translateY(-1px); }
-    .log-row{ padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.05); font-family:ui-monospace; font-size:14px; }
-    .tag{ padding:2px 8px; border-radius:8px; font-size:12px; font-weight:700; }
+    :root{ --stroke:rgba(255,255,255,.08); --ink:#e5e7eb; }
+    .shell{ max-width:980px; margin:0 auto; padding:32px 16px }
+    .card{ background:#10111a; border:1px solid var(--stroke); border-radius:16px; padding:20px; box-shadow:0 10px 24px rgba(0,0,0,.35) }
+    .field{ width:100%; background:#0f1117; border:1px solid var(--stroke); border-radius:12px; padding:12px 14px; color:var(--ink); outline:none }
+    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:white; font-weight:800; border-radius:12px; padding:12px 18px; box-shadow:0 10px 26px rgba(79,70,229,.35) }
+    .ghost{ background:#ffffff10; border:1px solid var(--stroke); color:var(--ink); border-radius:12px; padding:10px 14px }
+    .pill{ display:inline-flex; align-items:center; gap:8px; border-radius:9999px; padding:6px 10px; font-weight:700; border:1px solid var(--stroke) }
+    .ok{ background:#052e2b; color:#86efac; border-color:#134e4a }
+    .err{ background:#421919; color:#fecaca; border-color:#7f1d1d }
+    .row{ display:grid; grid-template-columns:110px 1fr; gap:10px; padding:10px 12px; border-bottom:1px solid var(--stroke) }
+    .tag{ font-size:11px; padding:2px 8px; border-radius:9999px; font-weight:700 }
     .tag.ok{ background:#064e3b; color:#6ee7b7 }
     .tag.err{ background:#5f1b1b; color:#fecaca }
+    #logs{ min-height:120px }
   </style>
 </head>
 <body>
-<main class="shell space-y-6">
-  <h1 class="text-2xl font-bold tracking-tight">BSSC Token Deployer (EVM)</h1>
+  <main class="shell space-y-6">
+    <header class="flex items-center justify-between">
+      <div class="text-2xl font-extrabold tracking-tight">BSSC Token Deployer (Browser solc)</div>
+      <div id="health" class="pill ok hidden"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>HEALTHY</div>
+    </header>
 
-  <section class="card space-y-3">
-    <div class="grid md:grid-cols-2 gap-3">
-      <input id="tokenName" class="field" placeholder="Token Name (e.g. Gnocchi Coin)"/>
-      <input id="tokenSymbol" class="field" placeholder="Symbol (e.g. GNC)"/>
-    </div>
-    <button id="deploy" class="primary w-full">Deploy Token</button>
-    <div id="status" class="mt-3 text-sm text-zinc-400"></div>
-  </section>
+    <!-- Wallet -->
+    <section class="card space-y-3">
+      <div class="text-xs uppercase text-zinc-400">Your wallet</div>
+      <div class="row">
+        <div class="text-zinc-500">Address</div>
+        <div class="flex items-center justify-between gap-3">
+          <div id="addr" class="font-mono truncate">—</div>
+          <div class="flex gap-2">
+            <button id="copyAddr" class="ghost">Copy</button>
+            <button id="check" class="ghost">Check BNB</button>
+            <button id="recover" class="primary">Recover</button>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="text-zinc-500">Private key</div>
+        <div class="flex items-center justify-between gap-3">
+          <input id="pk" class="field font-mono" placeholder="0x… (64 hex)"/>
+          <button id="copyPk" class="ghost">Copy</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="text-zinc-500">BNB Balance</div>
+        <div><span id="bal" class="font-mono">—</span> <span class="text-zinc-400">BNB</span></div>
+      </div>
+    </section>
 
-  <section class="card space-y-1">
-    <div class="text-xs uppercase text-zinc-400">Log</div>
-    <div id="logs" class="text-sm space-y-1"></div>
-  </section>
-</main>
+    <!-- Deploy -->
+    <section class="card space-y-3">
+      <div class="text-xs uppercase text-zinc-400">Deploy new ERC-20</div>
+      <div class="grid md:grid-cols-2 gap-3">
+        <input id="name" class="field" placeholder="Token name (e.g., Demo Token)"/>
+        <input id="symbol" class="field" placeholder="Symbol (e.g., DMO)"/>
+      </div>
+      <div class="text-sm text-zinc-400">Decimals = <b>9</b>, Initial Supply = <b>1,000,000</b> (minted to your wallet)</div>
+      <div id="inlineErr" class="text-rose-300 text-sm hidden"></div>
+      <div class="flex items-center gap-2">
+        <button id="compile" class="ghost">Compile only</button>
+        <button id="deploy" class="primary">Compile & Deploy</button>
+      </div>
+    </section>
+
+    <!-- Activity -->
+    <section class="card space-y-2">
+      <div class="flex items-center justify-between">
+        <div class="text-xs uppercase text-zinc-400">Activity</div>
+        <button id="clear" class="ghost">Clear</button>
+      </div>
+      <div id="logs" class="space-y-1"></div>
+    </section>
+  </main>
 
 <script type="module">
-import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
+  const { ethers } = window;
 
-const RPC_URL = "https://bssc-rpc.bssc.live";
-const CHAIN_ID = 16979;
+  // ===== Config =====
+  const RPC       = "https://bssc-rpc.bssc.live";
+  const CHAIN_ID  = 16979;
+  const DECIMALS  = 9n;
+  const SUPPLY_H  = 1_000_000n;                       // 100万（人間単位）
+  const SUPPLY    = SUPPLY_H * 10n ** DECIMALS;       // 生の整数
 
-// Your ABI
-const ABI = [
-  {
-    "inputs": [
-      {"internalType": "string","name": "name_","type": "string"},
-      {"internalType": "string","name": "symbol_","type": "string"},
-      {"internalType": "uint8","name": "decimals_","type": "uint8"},
-      {"internalType": "uint256","name": "initialSupplyHuman_","type": "uint256"}
-    ],
-    "stateMutability": "nonpayable","type": "constructor"
-  },
-  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"owner","type":"address"},{"indexed":true,"internalType":"address","name":"spender","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Approval","type":"event"},
-  {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},
-  {"inputs":[{"internalType":"address","name":"","type":"address"},{"internalType":"address","name":"","type":"address"}],"name":"allowance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"spender","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"approve","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
-  {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"address","name":"from","type":"address"},{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transferFrom","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"}
-];
+  // 最小限のERC20（OZ無し・依存無し）
+  // constructor(name, symbol, decimals, initialSupplyHuman)
+  const SRC = `
+  // SPDX-License-Identifier: MIT
+  pragma solidity ^0.8.20;
 
-// Your bytecode (only the "object" value from Remix)
-const BYTECODE = "0x608060405234801562000010575f80fd5b50604051620016e3380380620016e3833981810160405281019062000036919062000345565b835f908162000046919062000620565b50826001908162000058919062000620565b508160025f6101000a81548160ff021916908360ff1602179055505f82600a62000083919062000881565b82620000909190620008d1565b9050806003819055508060045f3373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff1681526020019081526020015f20819055503373ffffffffffffffffffffffffffffffffffffffff165f73ffffffffffffffffffffffffffffffffffffffff167fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef836040516200013a91906200092c565b60405180910390a3505050505062000947565b...736f6c63430008140033";
+  contract MyToken {
+      string private _name;
+      string private _symbol;
+      uint8  private _decimals;
+      uint256 private _totalSupply;
+      mapping(address=>uint256) private _bal;
+      mapping(address=>mapping(address=>uint256)) private _allow;
 
-const provider = new ethers.JsonRpcProvider(RPC_URL);
-let wallet;
+      event Transfer(address indexed from, address indexed to, uint256 value);
+      event Approval(address indexed owner, address indexed spender, uint256 value);
 
-// Use stored or random wallet
-if (localStorage.getItem("privkey")) {
-  wallet = new ethers.Wallet(localStorage.getItem("privkey"), provider);
-} else {
-  wallet = ethers.Wallet.createRandom().connect(provider);
-  localStorage.setItem("privkey", wallet.privateKey);
-}
+      constructor(string memory name_, string memory symbol_, uint8 decimals_, uint256 initialSupplyHuman_) {
+          _name = name_;
+          _symbol = symbol_;
+          _decimals = decimals_;
+          uint256 amount = initialSupplyHuman_ * (10 ** decimals_);
+          _totalSupply = amount;
+          _bal[msg.sender] = amount;
+          emit Transfer(address(0), msg.sender, amount);
+      }
 
-const log = (msg, type="")=>{
-  const el = document.createElement("div");
-  el.className="log-row";
-  el.innerHTML=`<span class="tag ${type==="ok"?"ok":type==="err"?"err":""}">${type?type.toUpperCase():"INFO"}</span> ${msg}`;
-  document.getElementById("logs").prepend(el);
-};
+      function name() public view returns (string memory) { return _name; }
+      function symbol() public view returns (string memory) { return _symbol; }
+      function decimals() public view returns (uint8) { return _decimals; }
+      function totalSupply() public view returns (uint256) { return _totalSupply; }
+      function balanceOf(address a) public view returns (uint256) { return _bal[a]; }
 
-document.getElementById("deploy").onclick = async ()=>{
-  try {
-    const name = document.getElementById("tokenName").value.trim();
-    const sym = document.getElementById("tokenSymbol").value.trim();
-    if(!name || !sym) return alert("Enter token name and symbol");
+      function transfer(address to, uint256 v) public returns (bool) {
+          require(_bal[msg.sender] >= v, "bal");
+          unchecked { _bal[msg.sender]-=v; _bal[to]+=v; }
+          emit Transfer(msg.sender, to, v);
+          return true;
+      }
 
-    const decimals = 9;
-    const supply = ethers.parseUnits("1000000", decimals);
+      function allowance(address o, address s) public view returns (uint256) { return _allow[o][s]; }
+      function approve(address s, uint256 v) public returns (bool) {
+          _allow[msg.sender][s] = v; emit Approval(msg.sender, s, v); return true;
+      }
 
-    const factory = new ethers.ContractFactory(ABI, BYTECODE, wallet);
-    log("Deploying contract…");
-    const contract = await factory.deploy(name, sym, decimals, supply);
-    log(`TX sent: ${contract.deployTransaction.hash}`);
-    await contract.waitForDeployment();
-    const addr = await contract.getAddress();
-    log(`Deployed at ${addr}`, "ok");
-    document.getElementById("status").textContent = `✅ Contract deployed: ${addr}`;
-  } catch(e){
-    log("Error: "+e.message, "err");
-    document.getElementById("status").textContent = "❌ " + e.message;
+      function transferFrom(address f, address t, uint256 v) public returns (bool) {
+          uint256 a = _allow[f][msg.sender]; require(a >= v, "allow"); require(_bal[f] >= v, "bal");
+          unchecked { _allow[f][msg.sender]=a-v; _bal[f]-=v; _bal[t]+=v; }
+          emit Transfer(f, t, v); return true;
+      }
+  }`;
+
+  // ===== DOM =====
+  const $ = id => document.getElementById(id);
+  const logs = $("logs"), balEl = $("bal"), addrEl = $("addr"), pkEl = $("pk"),
+        health = $("health"), inlineErr = $("inlineErr");
+
+  const showErr = m => { inlineErr.textContent = "✕ " + m; inlineErr.classList.remove("hidden"); };
+  const hideErr = () => inlineErr.classList.add("hidden");
+  const log = (msg, type="INFO") => {
+    const row = document.createElement("div"); row.className = "row";
+    row.innerHTML = `<div><span class="tag ${type==="OK"?"ok":type==="ERR"?"err":""}">${type}</span></div>
+      <div class="font-mono break-all">${msg}</div>`;
+    logs.prepend(row);
+  };
+
+  // ===== Wallet =====
+  const provider = new ethers.JsonRpcProvider(RPC);
+  let wallet;
+
+  const hydrate = () => { addrEl.textContent = wallet.address; pkEl.value = wallet.privateKey; };
+
+  (function ensureWallet(){
+    const saved = localStorage.getItem("privkey");
+    if (saved && /^0x[0-9a-fA-F]{64}$/.test(saved)) {
+      wallet = new ethers.Wallet(saved, provider); log("Recovered wallet", "OK");
+    } else {
+      wallet = ethers.Wallet.createRandom().connect(provider);
+      localStorage.setItem("privkey", wallet.privateKey);
+      log("Generated new wallet", "OK");
+    }
+    hydrate();
+  })();
+
+  $("recover").onclick = () => {
+    const v = (pkEl.value||"").trim();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(v)) { log("Invalid private key", "ERR"); return; }
+    wallet = new ethers.Wallet(v, provider);
+    localStorage.setItem("privkey", wallet.privateKey);
+    hydrate(); log("Recovered wallet", "OK");
+  };
+  $("copyAddr").onclick = async ()=>{ await navigator.clipboard.writeText(wallet.address); log("Address copied","OK"); };
+  $("copyPk").onclick   = async ()=>{ await navigator.clipboard.writeText(wallet.privateKey); log("Private key copied","OK"); };
+
+  $("check").onclick = async ()=> {
+    try {
+      const r = await fetch(RPC, { method:"POST", headers:{ "content-type":"application/json"},
+        body: JSON.stringify({jsonrpc:"2.0", id:1, method:"eth_getBalance", params:[wallet.address,"latest"]})});
+      const j = await r.json(); if (j.error) throw new Error(j.error.message);
+      balEl.textContent = ethers.formatEther(BigInt(j.result));
+      log("Checked BNB balance");
+      health.classList.remove("hidden");
+    } catch(e){ log("Check balance error: "+(e?.message||e),"ERR"); }
+  };
+  $("clear").onclick = ()=> logs.innerHTML = "";
+  $("check").click();
+
+  // ===== Compile (solc-js in browser) =====
+  async function compileSource() {
+    hideErr();
+    const name = $("name").value.trim();
+    const symbol = $("symbol").value.trim();
+    if (!name || !symbol) { showErr("Name / Symbol を入力してください。"); throw new Error("invalid input"); }
+
+    log("Loading solc (WASM)…");
+    await window.solc.ready; // WASM初期化待ち
+
+    const input = {
+      language: "Solidity",
+      sources: { "MyToken.sol": { content: SRC } },
+      settings: {
+        optimizer: { enabled: true, runs: 200 },
+        outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } }
+      }
+    };
+
+    log("Compiling…");
+    const output = JSON.parse(window.solc.compile(JSON.stringify(input)));
+
+    if (output.errors) {
+      const fatal = output.errors.find(e => e.severity === "error");
+      output.errors.forEach(e => log((e.severity==='error'?'ERR ':'WARN ')+e.formattedMessage, e.severity==='error'?'ERR':'INFO'));
+      if (fatal) { showErr("Solidity compile error"); throw new Error("compile failed"); }
+    }
+
+    const c = output.contracts["MyToken.sol"]["MyToken"];
+    const abi = c.abi;
+    const bytecode = "0x"+c.evm.bytecode.object;
+
+    log("Compile success", "OK");
+    return { abi, bytecode, name, symbol };
   }
-};
+
+  // ===== Deploy (優先はethers factory / Legacy TX) =====
+  async function deployCompiled({abi, bytecode, name, symbol}) {
+    try {
+      // ContractFactory 経由（legacy指定）
+      const gasPriceHex = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json());
+      const gasPrice = gasPriceHex?.result ? BigInt(gasPriceHex.result) : 1_000_000_000n;
+
+      const factory = new ethers.ContractFactory(abi, bytecode, wallet);
+      log("Sending deploy tx (factory, legacy)…");
+      const c = await factory.deploy(name, symbol, Number(DECIMALS), SUPPLY_H, { gasPrice });
+      log(`TX sent: ${c.deployTransaction.hash}`);
+      const deployed = await c.waitForDeployment();
+      const addr = await deployed.getAddress();
+      log(`Deployed at ${addr}`,"OK");
+      $("check").click();
+    } catch (e) {
+      // 失敗したら raw legacy TX でフォールバック
+      log("Factory deploy failed -> fallback to raw legacy: "+(e?.message||e), "ERR");
+      await fallbackRawDeploy({abi, bytecode, name, symbol});
+    }
+  }
+
+  async function fallbackRawDeploy({abi, bytecode, name, symbol}) {
+    // constructor data
+    const iface = new ethers.Interface(abi);
+    const data  = iface.encodeDeploy([name, symbol, Number(DECIMALS), SUPPLY_H]);
+    const txData = bytecode + data.slice(2);
+
+    const rpc = async (method, params=[])=>{
+      const r = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},
+        body:JSON.stringify({jsonrpc:"2.0",id:Date.now(),method,params})});
+      const j = await r.json(); if (j.error) throw new Error(j.error.message); return j.result;
+    };
+
+    const [gasPriceHex, nonceHex] = await Promise.all([
+      rpc("eth_gasPrice", []),
+      rpc("eth_getTransactionCount", [wallet.address, "latest"]) // pendingは避ける
+    ]);
+    const gasPrice = BigInt(gasPriceHex);
+    let gasLimit = 2_000_000n;
+    try { gasLimit = BigInt(await rpc("eth_estimateGas", [{ from: wallet.address, data: txData }])) + 50_000n; } catch {}
+
+    const unsigned = {
+      to: null,                         // contract creation
+      data: txData,
+      gasPrice,
+      gasLimit,
+      nonce: parseInt(nonceHex, 16),
+      chainId: CHAIN_ID,
+      type: 0                           // legacy
+    };
+
+    const signed = await wallet.signTransaction(unsigned);
+    const txHash = await rpc("eth_sendRawTransaction",[signed]);
+    log(`TX sent (raw): ${txHash}`);
+
+    // wait receipt
+    let receipt=null, deadline=Date.now()+60_000;
+    while(Date.now()<deadline){
+      try { receipt = await rpc("eth_getTransactionReceipt",[txHash]); } catch {}
+      if (receipt?.contractAddress) break;
+      await new Promise(r=>setTimeout(r,1500));
+    }
+    if (!receipt?.contractAddress) { showErr("Timeout: receipt not found"); throw new Error("receipt timeout"); }
+    log(`Deployed at ${receipt.contractAddress}`,"OK");
+    $("check").click();
+  }
+
+  // Buttons
+  $("compile").onclick = async ()=>{
+    try { await compileSource(); } catch(e){ log(e.message||String(e),"ERR"); }
+  };
+
+  $("deploy").onclick = async ()=>{
+    try {
+      const comp = await compileSource();
+      await deployCompiled(comp);
+    } catch(e){ showErr(e?.message||String(e)); log("Deploy error: "+(e?.message||e),"ERR"); }
+  };
 </script>
 </body>
 </html>
