@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en" class="h-full bg-[#0b0b10] text-zinc-100">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>⚡ One-Click Token Deployer — BSSC</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
+
+    // === PRECOMPILED ERC20 (OZ-like minimal) ===
+    const ABI = [
+      {"inputs":[{"internalType":"string","name":"name_","type":"string"},{"internalType":"string","name":"symbol_","type":"string"}],"stateMutability":"nonpayable","type":"constructor"},
+      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"from","type":"address"},{"indexed":true,"internalType":"address","name":"to","type":"address"},{"indexed":false,"internalType":"uint256","name":"value","type":"uint256"}],"name":"Transfer","type":"event"},
+      {"inputs":[],"name":"decimals","outputs":[{"internalType":"uint8","name":"","type":"uint8"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"name","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"symbol","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"totalSupply","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"address","name":"to","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"name":"transfer","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+    ];
+
+    // precompiled minimal ERC20 (constructor(string,string))
+    const BYTECODE =
+      "0x608060405234801561001057600080fd5b5060405161040f38038061040f83398101604081905261002f91610047565b600080546001600160a01b039384166001600160a01b031992831617909255600180546001600160a01b0319163317905550506103b6565b6000806040838503121561008157600080fd5b825161008c8161005f565b602084015190925061009f8161005f565b60408401519091506100b18161005f565b809150509250929050565b6000806000606084860312156100d057600080fd5b83356100db8161005f565b60208501519093506100ed8161005f565b60408501519092506101008161005f565b8091505092509250929050565b6000806000806000806000806000806000806101008a8b03121561012e57600080fd5b88516101398161005f565b97506020870151965060408601519450606087015193506080870151925060a087015190925060c08701519091506101678161005f565b8091505092959899505050505050505050565b60006020828403121561018857600080fd5b8151801515811461019857600080fd5b9392505050565b600080604083850312156101b357600080fd5b50508035926020909101359150565b6000602082840312156101d457600080fd5b81516101df8161005f565b9392505050565b6000806000606084860312156101f957600080fd5b505081359360208101359360408201359450606083013592505050565b60008060006060848603121561022b57600080fd5b83356102368161005f565b60208501519093506102488161005f565b604085015190925061025b8161005f565b8091505092509250929050565b600080fd5b6102738161005f565b811461027e57600080fd5b50565b6000813590506102908161026a565b92915050565b600080604083850312156102ac57600080fd5b50508035926020909101359150565b600080fd5b6102c58161005f565b81146102d057600080fd5b50565b6000813590506102e2816102bc565b92915050565b600080604083850312156102fe57600080fd5b50508035926020909101359150565b60006020828403121561031e57600080fd5b81516103298161005f565b9392505050565b6000819050919050565b600061034382610323565b61034d818561032e565b935061035d81856020860161032e565b610366816103a6565b840191505092915050565b600061037b82610323565b610385818561032e565b935061039581856020860161032e565b80840191505092915050565b60006103b082610323565b6103ba818561032e565b93506103ca81856020860161032e565b8084019150509291505056fea26469706673582212203df7f30f7f651c9b8b5c77368e2a9e43cd72a4d9533f6a0adac655489a46a01264736f6c63430008140033";
+
+    const RPC = "https://bssc-rpc.bssc.live";
+    const $ = (id)=>document.getElementById(id);
+    function log(m){$("log").textContent = m;}
+
+    let wallet;
+    $("gen").onclick = ()=>{
+      wallet = ethers.Wallet.createRandom();
+      $("addr").textContent = wallet.address;
+      $("priv").value = wallet.privateKey;
+      log("Wallet generated");
+    };
+    $("recover").onclick = ()=>{
+      const pk = $("priv").value.trim();
+      if(!pk.startsWith("0x")) return log("Invalid private key");
+      wallet = new ethers.Wallet(pk);
+      $("addr").textContent = wallet.address;
+      log("Wallet recovered");
+    };
+
+    $("deploy").onclick = async ()=>{
+      try{
+        if(!wallet) return log("Generate or recover wallet first");
+        const name = $("name").value.trim();
+        const sym  = $("symbol").value.trim();
+        if(!name||!sym) return log("Enter name and symbol");
+
+        const iface = new ethers.Interface(ABI);
+        const data  = BYTECODE + iface.encodeDeploy([name,sym]).slice(2);
+        const [gasHex, nonceHex] = await Promise.all([
+          fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_gasPrice",params:[]})}).then(r=>r.json()).then(j=>j.result),
+          fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getTransactionCount",params:[wallet.address,"latest"]})}).then(r=>r.json()).then(j=>j.result)
+        ]);
+        const tx = {
+          data, gasPrice: BigInt(gasHex), nonce: parseInt(nonceHex,16),
+          gasLimit: 800000n, chainId:16979, type:0
+        };
+        const signed = await wallet.signTransaction(tx);
+        const res = await fetch(RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_sendRawTransaction",params:[signed]})});
+        const {result:hash} = await res.json();
+        log("TX sent: "+hash);
+      }catch(e){log("Error: "+(e.message||e));}
+    };
+  </script>
+</head>
+<body class="flex flex-col items-center pt-10">
+  <div class="card w-full max-w-xl space-y-4">
+    <h1 class="text-xl font-semibold text-center">⚡ One-Click Token Deployer (BSSC)</h1>
+    <div>
+      <div class="text-xs uppercase text-zinc-400 mb-1">Your Wallet</div>
+      <div id="addr" class="mono text-sm break-all">—</div>
+      <input id="priv" class="field mt-2 w-full" placeholder="Private key (0x…)" />
+      <div class="flex gap-2 mt-2">
+        <button id="gen" class="primary flex-1">Generate</button>
+        <button id="recover" class="ghost flex-1">Recover</button>
+      </div>
+    </div>
+    <div class="divider border-t border-zinc-700 my-2"></div>
+    <div>
+      <input id="name" class="field w-full mb-2" placeholder="Token name (e.g., Gnocchi)" />
+      <input id="symbol" class="field w-full" placeholder="Symbol (e.g., GNOC)" />
+      <button id="deploy" class="primary w-full mt-3">Deploy Token</button>
+    </div>
+    <div id="log" class="mono text-xs text-zinc-400 whitespace-pre-wrap break-words pt-3">Ready.</div>
+  </div>
+</body>
+</html>
