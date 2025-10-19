@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" class="h-full bg-[#0b0b10] text-zinc-100">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>BSSC Token Deployer (EVM)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { --stroke: rgba(255,255,255,.06); }
+    .shell{ max-width:800px; margin:0 auto; padding:32px 16px }
+    .card{ background:#10111a; border-radius:16px; padding:24px; border:1px solid var(--stroke); box-shadow:0 10px 24px rgba(0,0,0,.4); }
+    .field{ width:100%; background:#0f1117; border:1px solid var(--stroke); border-radius:12px; padding:10px 14px; color:#e5e7eb; outline:none; }
+    .field::placeholder{ color:#6b7280 }
+    .primary{ background-image:linear-gradient(135deg,#6d28d9,#4f46e5); color:white; font-weight:700; border-radius:12px; padding:10px 16px; box-shadow:0 8px 24px rgba(109,40,217,.35); transition:.12s; }
+    .primary:hover{ filter:brightness(1.1); transform:translateY(-1px); }
+    .ghost{ background:#ffffff0f; border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:10px 16px; color:#e5e7eb; }
+    .log-row{ padding:8px 12px; border-bottom:1px solid rgba(255,255,255,.05); font-family:ui-monospace; font-size:14px; }
+    .tag{ padding:2px 8px; border-radius:8px; font-size:12px; font-weight:700; }
+    .tag.ok{ background:#064e3b; color:#6ee7b7 }
+    .tag.err{ background:#5f1b1b; color:#fecaca }
+  </style>
+</head>
+<body>
+<main class="shell space-y-6">
+  <h1 class="text-2xl font-bold tracking-tight">BSSC Token Deployer (EVM)</h1>
+
+  <section class="card space-y-3">
+    <div class="grid md:grid-cols-2 gap-3">
+      <input id="tokenName" class="field" placeholder="Token Name (e.g. Gnocchi Coin)"/>
+      <input id="tokenSymbol" class="field" placeholder="Symbol (e.g. GNC)"/>
+    </div>
+    <div class="grid md:grid-cols-2 gap-3">
+      <input id="tokenDecimals" class="field" placeholder="Decimals (e.g. 6)"/>
+      <input id="tokenSupply" class="field" placeholder="Initial Supply (e.g. 1000000)"/>
+    </div>
+    <button id="deploy" class="primary w-full">Deploy Token</button>
+    <div id="status" class="mt-3 text-sm text-zinc-400"></div>
+  </section>
+
+  <section class="card space-y-1">
+    <div class="text-xs uppercase text-zinc-400">Log</div>
+    <div id="logs" class="text-sm space-y-1"></div>
+  </section>
+</main>
+
+<script type="module">
+import { ethers } from "https://cdn.jsdelivr.net/npm/ethers@6.13.2/dist/ethers.min.js";
+
+const RPC_URL = "https://bssc-rpc.bssc.live";
+const CHAIN_ID = 16979;
+const ABI = YOUR_ABI_HERE; // ←ここにあなたのABIをそのまま貼る
+const BYTECODE = "YOUR_BYTECODE_HERE"; // ←ここにobjectの値をコピペ（0xで始まる超長いやつ）
+
+const provider = new ethers.JsonRpcProvider(RPC_URL);
+let wallet;
+
+// 認証済みウォレットを使う（例：localStorageにprivate keyを保存している場合）
+if (localStorage.getItem("privkey")) {
+  wallet = new ethers.Wallet(localStorage.getItem("privkey"), provider);
+} else {
+  wallet = ethers.Wallet.createRandom().connect(provider);
+  localStorage.setItem("privkey", wallet.privateKey);
+}
+
+const log = (msg, type="")=>{
+  const el = document.createElement("div");
+  el.className="log-row";
+  el.innerHTML=`<span class="tag ${type==="ok"?"ok":type==="err"?"err":""}">${type?type.toUpperCase():"INFO"}</span> ${msg}`;
+  document.getElementById("logs").prepend(el);
+};
+
+document.getElementById("deploy").onclick = async ()=>{
+  try {
+    const name = document.getElementById("tokenName").value.trim();
+    const sym = document.getElementById("tokenSymbol").value.trim();
+    const dec = parseInt(document.getElementById("tokenDecimals").value.trim());
+    const sup = document.getElementById("tokenSupply").value.trim();
+    if(!name || !sym || isNaN(dec) || !sup) return alert("Fill all fields");
+
+    const factory = new ethers.ContractFactory(ABI, BYTECODE, wallet);
+    log("Deploying contract…");
+    const contract = await factory.deploy(name, sym, dec, ethers.parseUnits(sup, dec));
+    log(`TX sent: ${contract.deployTransaction.hash}`);
+    await contract.waitForDeployment();
+    const addr = await contract.getAddress();
+    log(`Deployed at ${addr}`, "ok");
+    document.getElementById("status").textContent = `✅ Contract deployed: ${addr}`;
+  } catch(e){
+    log("Error: "+e.message, "err");
+    document.getElementById("status").textContent = "❌ " + e.message;
+  }
+};
+</script>
+</body>
+</html>
