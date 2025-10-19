@@ -135,8 +135,7 @@
     async function loadSolc() {
       if (window.solc && window.solc.compile) return true;
       const urls = [
-        "https://cdn.jsdelivr.net/npm/solc@0.8.20/solc.min.js",
-        "https://unpkg.com/solc@0.8.20/solc.min.js"
+        "/solc.min.js"
       ];
       for (const u of urls) {
         await new Promise(res=>{
